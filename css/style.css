@@ -752,3 +752,116 @@ td.right { text-align: right; }
 
 /* Invite code input uppercase transform handled inline */
 
+/* ====== 登录页面 ====== */
+.login-page {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.login-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px 28px;
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 380px;
+  animation: fadeUp 0.4s ease;
+}
+
+.login-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.login-tab {
+  flex: 1;
+  padding: 10px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  border: none;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.login-tab.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.login-tab:first-child { border-right: 1px solid var(--border); }
+.login-tab.active:first-child { border-right-color: var(--accent); }
+
+.login-form .form-group {
+  margin-bottom: 16px;
+}
+
+/* 头像选择 */
+.avatar-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.avatar-option {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--bg);
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.avatar-option:hover {
+  border-color: var(--accent);
+  transform: scale(1.15);
+}
+
+.avatar-option.selected {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+/* 自动登录过渡页 */
+#auto-login-info {
+  text-align: center;
+}
+
+#auto-login-info .btn-outline {
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+/* 主应用容器默认隐藏，登录后显示 */
+.sidebar, .main, .mobile-menu-btn, .toast-container { display: none !important; }
+body.logged-in .login-page { display: none !important; }
+body.logged-in .sidebar { display: flex !important; }
+body.logged-in .main { display: block !important; }
+body.logged-in .toast-container { display: flex !important; }
+
+@media (max-width: 768px) {
+  body.logged-in .mobile-menu-btn { display: flex !important; }
+}
+

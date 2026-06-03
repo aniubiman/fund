@@ -9,6 +9,14 @@
  * 5. 定时 NAV 刷新 (60s) + 定时快照同步 (5min)
  */
 (async function init() {
+  // 0. 检查自动登录（已注册用户跳过登录页）
+  if (window.Auth) {
+    const user = await window.Auth.tryAutoLogin();
+    if (user) {
+      document.body.classList.add('logged-in');
+    }
+  }
+
   // 1. 主题
   loadTheme();
   const themeLabel = document.getElementById('theme-label');
@@ -23,6 +31,12 @@
 
   const sbInit = window.SB ? window.SB.init() : Promise.resolve(null);
   sbInit.then(user => {
+    if (user) {
+      // 同步本地用户名到 Supabase
+      if (window.Auth && window.Auth.isLoggedIn()) {
+        window.Auth.syncUsernameToSupabase();
+      }
+    }
     if (user && window.SB.isInRoom()) {
       // 已在房间中，订阅成员变动
       const room = window.SB.getCurrentRoom();
