@@ -30,12 +30,24 @@ let sb = null;                    // Supabase 客户端实例
 let currentUser = null;           // { id, username }
 let currentRoom = null;           // { id, invite_code, name }
 let realtimeChannel = null;       // 当前房间的实时订阅
+let initPromise = null;           // 确保 init 只跑一次，幂等调用返回同一 Promise
 
 /**
  * 启动 Supabase，完成匿名登录，确保 profiles 行存在
- * 在 app.js 初始化阶段调用
+ * 在 app.js 初始化阶段调用，也供 ui.js 安全等待
+ * 多次调用幂等——已完成的立即返回缓存结果，进行中的返回同一个 Promise
  */
 async function supabaseInit() {
+  // 幂等：已初始化过直接返回
+  if (initPromise && currentUser) return currentUser;
+  // 幂等：正在初始化中，复用同一 Promise
+  if (initPromise) return initPromise;
+
+  initPromise = _doInit();
+  return initPromise;
+}
+
+async function _doInit() {
   if (!window.supabase) {
     console.warn('Supabase SDK 未加载，好友功能不可用');
     return null;
@@ -51,6 +63,7 @@ async function supabaseInit() {
     const { data, error } = await sb.auth.signInAnonymously();
     if (error) {
       console.warn('Supabase 匿名登录失败:', error.message, '好友功能不可用');
+      initPromise = null; // 失败可重试
       return null;
     }
     session = data.session;
@@ -73,19 +86,21 @@ async function supabaseInit() {
     currentUser = { id: userId, username: profile.username || '' };
   }
 
-  // 4. 检查是否已在房间中
-  const { data: membership } = await sb
-    .from('room_members')
-    .select('room_id, rooms(id, invite_code, name)')
-    .eq('user_id', userId)
-    .maybeSingle();
+  // 4. 检查是否已在房间中（仅当还没通过 joinRoom/createRoom 设置过时）
+  if (!currentRoom) {
+    const { data: membership } = await sb
+      .from('room_members')
+      .select('room_id, rooms(id, invite_code, name)')
+      .eq('user_id', userId)
+      .maybeSingle();
 
-  if (membership && membership.rooms) {
-    currentRoom = {
-      id: membership.rooms.id,
-      invite_code: membership.rooms.invite_code,
-      name: membership.rooms.name,
-    };
+    if (membership && membership.rooms) {
+      currentRoom = {
+        id: membership.rooms.id,
+        invite_code: membership.rooms.invite_code,
+        name: membership.rooms.name,
+      };
+    }
   }
 
   return currentUser;
@@ -201,7 +216,14 @@ async function joinRoom(inviteCode) {
     .from('room_members')
     .insert({ room_id: room.id, user_id: currentUser.id });
 
-  if (joinErr) return { error: '加入失败: ' + joinErr.message };
+  if (joinErr) {
+    // 23505 = 唯一键冲突 → 已在房间中，直接恢复状态
+    if (joinErr.code === '23505') {
+      currentRoom = { id: room.id, invite_code: room.invite_code, name: room.name };
+      return { room: currentRoom, alreadyIn: true };
+    }
+    return { error: '加入失败: ' + joinErr.message };
+  }
 
   currentRoom = { id: room.id, invite_code: room.invite_code, name: room.name };
 
@@ -387,6 +409,7 @@ function unsubscribeRoomRealtime() {
 // ===========================
 window.SB = {
   init: supabaseInit,
+  waitForInit: () => supabaseInit(),   // 幂等：等 init 完成，用于 ui 安全等待
   setUsername: setMyUsername,
   getUsername: getMyUsername,
   getUserId: getMyUserId,

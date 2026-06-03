@@ -607,6 +607,8 @@ function setChartPeriod(period, btn) {
 let friendViewUserId = null;
 
 /** 好友页入口：根据当前状态显示不同面板 */
+let friendsPageLoading = false;
+
 async function renderFriendsPage() {
   if (!window.SB) {
     gel('friends-setup').style.display = 'block';
@@ -615,6 +617,18 @@ async function renderFriendsPage() {
     gel('friends-setup').querySelector('p').textContent = 'Supabase 未加载，好友功能不可用。请检查网络后刷新页面。';
     return;
   }
+
+  // 显示加载中，等待 init 完成（幂等，已完成则立即返回）
+  if (!friendsPageLoading) {
+    gel('friends-setup').style.display = 'block';
+    gel('friends-lobby').style.display = 'none';
+    gel('friends-room').style.display = 'none';
+    gel('friends-setup').querySelector('p').textContent = '正在连接服务器…';
+    friendsPageLoading = true;
+  }
+
+  await window.SB.waitForInit();
+  friendsPageLoading = false;
 
   const username = window.SB.getUsername();
 
