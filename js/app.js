@@ -9,20 +9,21 @@
  * 5. 定时 NAV 刷新 (60s) + 定时快照同步 (5min)
  */
 (async function init() {
-  // 0. 检查自动登录（已注册用户跳过登录页）
+  // 0. 检查自动登录（已登录用户展示头像卡片，点击后进入）
   if (window.Auth) {
     const user = await window.Auth.tryAutoLogin();
     if (user) {
-      document.body.classList.add('logged-in');
+      // 展示自动登录卡片（头像 + 用户名 + 进入按钮）
+      document.getElementById('login-main-card').style.display = 'none';
+      document.getElementById('auto-login-info').style.display = 'block';
+      window.Auth.renderAutoLoginAvatar(user);
     }
   }
 
-  // 1. 主题
-  loadTheme();
-  const themeLabel = document.getElementById('theme-label');
-  if (themeLabel) {
-    themeLabel.textContent = document.body.getAttribute('data-theme') === 'dark'
-      ? '☀️ 亮色模式' : '🌙 暗色模式';
+  // 1. 初始化主题系统（默认亮色，如有保存则恢复）
+  if (window.Theme) {
+    window.Theme.init();
+    updateThemePickerUI();
   }
 
   // 2. Supabase 初始化（不阻塞主流程）
@@ -42,8 +43,8 @@
       const room = window.SB.getCurrentRoom();
       window.SB.subscribeRoomRealtime(room.id, (payload) => {
         const evt = payload.eventType;
-        if (evt === 'INSERT') showToast('👋 有新朋友加入了房间！', 'info');
-        if (evt === 'DELETE') showToast('👋 有人离开了房间', 'info');
+        if (evt === 'INSERT') showToast(iconWave('icon-sm') + ' 有新朋友加入了房间！', 'info');
+        if (evt === 'DELETE') showToast(iconWave('icon-sm') + ' 有人离开了房间', 'info');
         // 刷新成员列表和排行榜
         if (currentPage === 'friends') renderFriendsPage();
       });

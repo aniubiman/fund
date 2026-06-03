@@ -29,19 +29,25 @@ function getCtx(canvasId, width, height) {
 }
 
 function isDark() {
-  return document.body.getAttribute('data-theme') === 'dark';
+  return window.Theme ? window.Theme.isDark() : false;
+}
+
+function chartFont(size, weight) {
+  var bodyFont = getComputedStyle(document.body).fontFamily;
+  return (weight || '') + ' ' + size + 'px ' + bodyFont;
 }
 
 function themeColors() {
-  const dark = isDark();
+  var dark = isDark();
+  var accent = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#007AFF';
   return {
-    textPrimary: dark ? '#f1f5f9' : '#0f172a',
-    textSecondary: dark ? '#94a3b8' : '#64748b',
-    grid: dark ? '#1e293b' : '#f1f5f9',
-    line: '#6366f1',
-    area: dark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.08)',
-    dot: '#6366f1',
-    costLine: dark ? '#475569' : '#cbd5e1',
+    textPrimary: dark ? '#e2e8f0' : '#1d1d1f',
+    textSecondary: dark ? '#94a3b8' : '#6e6e73',
+    grid: dark ? '#1e293b' : '#e8e8ed',
+    line: accent,
+    area: dark ? 'rgba(6,182,212,0.08)' : 'rgba(0,122,255,0.06)',
+    dot: accent,
+    costLine: dark ? '#334155' : '#d2d2d7',
   };
 }
 
@@ -78,7 +84,7 @@ function renderTrendChart() {
   if (totalCost <= 0) {
     // 无持仓时显示空状态
     ctx.fillStyle = c.textSecondary;
-    ctx.font = '14px -apple-system, "PingFang SC", sans-serif';
+    ctx.font = chartFont(14);
     ctx.textAlign = 'center';
     ctx.fillText('暂无持仓数据，买入基金后将显示收益走势', w / 2, h / 2);
     return;
@@ -119,12 +125,12 @@ function renderTrendChart() {
     ctx.moveTo(pad.left, vy);
     ctx.lineTo(pad.left + cw, vy);
     ctx.strokeStyle = c.grid;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 0.5;
     ctx.stroke();
 
     const val = maxVal - (range / 4) * i;
     ctx.fillStyle = c.textSecondary;
-    ctx.font = '11px -apple-system, "PingFang SC", sans-serif';
+    ctx.font = chartFont(11);
     ctx.textAlign = 'right';
     ctx.fillText(fmtShortMoney(val), pad.left - 8, vy + 4);
   }
@@ -136,18 +142,21 @@ function renderTrendChart() {
     const idx = Math.round((steps / xLabels) * i);
     const dx = x(idx);
     ctx.fillStyle = c.textSecondary;
-    ctx.font = '11px -apple-system, "PingFang SC", sans-serif';
+    ctx.font = chartFont(11);
     const d = data[idx].date;
     ctx.fillText(`${d.getMonth() + 1}/${d.getDate()}`, dx, height - pad.bottom + 18);
   }
 
   // ---- 面积填充 ----
+  var gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
+  gradient.addColorStop(0, c.area);
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.beginPath();
   ctx.moveTo(x(0), y(minVal));
   for (let i = 0; i <= steps; i++) ctx.lineTo(x(i), y(data[i].value));
   ctx.lineTo(x(steps), y(minVal));
   ctx.closePath();
-  ctx.fillStyle = c.area;
+  ctx.fillStyle = gradient;
   ctx.fill();
 
   // ---- 折线 ----
@@ -156,46 +165,67 @@ function renderTrendChart() {
     i === 0 ? ctx.moveTo(x(i), y(data[i].value)) : ctx.lineTo(x(i), y(data[i].value));
   }
   ctx.strokeStyle = c.line;
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 2;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   ctx.stroke();
 
   // ---- 终点圆点 ----
   const lx = x(steps), ly = y(data[steps].value);
+  // Outer glow ring
   ctx.beginPath();
-  ctx.arc(lx, ly, 5, 0, Math.PI * 2);
-  ctx.fillStyle = c.dot;
+  ctx.arc(lx, ly, 9, 0, Math.PI * 2);
+  ctx.fillStyle = c.area;
+  ctx.fill();
+  // Inner dot
+  ctx.beginPath();
+  ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(lx, ly, 11, 0, Math.PI * 2);
-  ctx.fillStyle = c.area;
+  ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+  ctx.fillStyle = c.dot;
   ctx.fill();
 
   // ---- 成本基准线 ----
-  ctx.setLineDash([4, 6]);
+  ctx.setLineDash([3, 5]);
   ctx.beginPath();
   const costY = y(totalCost);
   ctx.moveTo(pad.left, costY);
   ctx.lineTo(pad.left + cw, costY);
   ctx.strokeStyle = c.costLine;
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 0.5;
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.fillStyle = c.textSecondary;
+  ctx.font = chartFont(10);
   ctx.textAlign = 'right';
-  ctx.fillText('成本线', pad.left + cw, costY - 6);
+  ctx.fillText('成本线', pad.left + cw, costY - 5);
 }
 
 // ===========================
 //  环形图：资产配置
 // ===========================
 
-const DONUT_COLORS = [
-  '#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b',
-  '#ef4444', '#ec4899', '#3b82f6', '#14b8a6', '#f97316',
-  '#84cc16', '#e11d48'
-];
+function getChartPalette() {
+  const style = getComputedStyle(document.body);
+  var colors = [];
+  for (var i = 1; i <= 10; i++) {
+    var c = style.getPropertyValue('--chart-' + i).trim();
+    if (c) colors.push(c);
+  }
+  if (colors.length === 0) {
+    // Fallback if CSS vars aren't available
+    colors = ['#007AFF', '#5856D6', '#34C759', '#FF9500', '#FF3B30',
+      '#AF52DE', '#5AC8FA', '#FF2D55', '#00C7BE', '#8E8E93'];
+  }
+  return colors;
+}
+
+function getChartCashColor() {
+  var c = getComputedStyle(document.body).getPropertyValue('--chart-cash').trim();
+  return c || '#8E8E93';
+}
 
 function renderAllocationChart() {
   const { ctx, width, height } = getCtx('allocationChart', 220, 220);
@@ -208,17 +238,19 @@ function renderAllocationChart() {
   const c = themeColors();
 
   // 构建数据
+  var palette = getChartPalette();
+  var cashColor = getChartCashColor();
   const segments = window.PF.holdings.map((h, i) => ({
     name: (window.API.NAV_CACHE[h.code] && window.API.NAV_CACHE[h.code].name) || h.code,
     code: h.code,
     value: getHoldingMarketValue(h),
-    color: DONUT_COLORS[i % DONUT_COLORS.length]
+    color: palette[i % palette.length]
   }));
 
   const total = getTotalAssets();
 
   if (window.PF.cash > 0) {
-    segments.push({ name: '可用现金', code: 'CASH', value: window.PF.cash, color: '#94a3b8' });
+    segments.push({ name: '可用现金', code: 'CASH', value: window.PF.cash, color: cashColor });
   }
 
   // 清空 & 绘制
@@ -226,7 +258,7 @@ function renderAllocationChart() {
 
   if (segments.length === 0 || total <= 0) {
     ctx.fillStyle = c.textSecondary;
-    ctx.font = '14px -apple-system, "PingFang SC", sans-serif';
+    ctx.font = chartFont(14);
     ctx.textAlign = 'center';
     ctx.fillText('暂无持仓', cx, cy);
     renderAllocationLegend(segments);
@@ -247,7 +279,7 @@ function renderAllocationChart() {
 
     // 超过 5% 的扇区画分割线
     if (seg.value / total > 0.05) {
-      ctx.strokeStyle = isDark() ? '#1e293b' : '#ffffff';
+      ctx.strokeStyle = isDark() ? '#141c2b' : '#ffffff';
       ctx.lineWidth = 2;
       ctx.stroke();
     }
@@ -256,15 +288,16 @@ function renderAllocationChart() {
   });
 
   // 中心文字
-  ctx.fillStyle = c.textPrimary;
-  ctx.font = 'bold 15px -apple-system, "PingFang SC", sans-serif';
+  ctx.fillStyle = c.textSecondary;
+  ctx.font = chartFont(11, '600');
   ctx.textAlign = 'center';
-  ctx.fillText('总资产', cx, cy - 4);
-  ctx.font = 'bold 12px -apple-system, "PingFang SC", sans-serif';
+  ctx.fillText('总资产', cx, cy - 6);
+  ctx.fillStyle = c.textPrimary;
+  ctx.font = chartFont(14, 'bold');
   const totalStr = total >= 10000
     ? '¥' + (total / 10000).toFixed(2) + '万'
     : '¥' + total.toFixed(2);
-  ctx.fillText(totalStr, cx, cy + 18);
+  ctx.fillText(totalStr, cx, cy + 14);
 
   // 图例
   renderAllocationLegend(segments);
@@ -280,7 +313,7 @@ function renderAllocationLegend(segments) {
     : segments.map(seg => `
       <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-secondary);max-width:160px;">
         <span style="width:10px;height:10px;border-radius:3px;background:${seg.color};flex-shrink:0;"></span>
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${seg.code === 'CASH' ? '💵 现金' : seg.name}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${seg.code === 'CASH' ? iconCash('icon-sm') + ' 现金' : seg.name}</span>
         <span style="font-weight:600;color:var(--text-primary);flex-shrink:0;">${total > 0 ? (seg.value / total * 100).toFixed(1) : '0'}%</span>
       </div>
     `).join('');
@@ -298,4 +331,159 @@ window.addEventListener('resize', () => {
 function renderAllCharts() {
   renderTrendChart();
   renderAllocationChart();
+}
+
+// ===========================
+//  Sparkline 迷你走势图（布朗桥算法）
+// ===========================
+
+/**
+ * 绘制迷你走势图
+ * @param {string} canvasId 画布ID
+ * @param {number} actualPnL 真实的盈亏金额
+ */
+// ===========================
+//  流体波浪动画（替代迷你走势图）
+// ===========================
+
+var _fluidWaves = {}; // 按 canvasId 存动画状态
+
+function initFluidWave(canvasId, fillRatio, isProfit) {
+  var canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+
+  // 如果已有动画在跑，先停掉
+  if (_fluidWaves[canvasId]) {
+    _fluidWaves[canvasId].active = false;
+    delete _fluidWaves[canvasId];
+  }
+
+  var ctx = canvas.getContext('2d');
+  var dpr = window.devicePixelRatio || 1;
+  var width = 0, height = 0;
+  var time = 0;
+  var state = { active: true };
+  _fluidWaves[canvasId] = state;
+
+  // fillRatio: 0=贴底, 0.5=一半, 1=满
+  fillRatio = Math.min(Math.max(fillRatio || 0, 0), 1);
+
+  function resize() {
+    var w = canvas.clientWidth;
+    var h = canvas.clientHeight;
+    if (w === 0 || h === 0) return false;
+    width = w;
+    height = h;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return true;
+  }
+
+  function waitAndStart() {
+    if (resize()) {
+      draw();
+    } else {
+      requestAnimationFrame(waitAndStart);
+    }
+  }
+
+  function draw() {
+    if (!state.active) return;
+    ctx.clearRect(0, 0, width, height);
+
+    var waves = [
+      { length: 0.006, amplitude: 5,  speed: 0.018, alpha: 0.10 },
+      { length: 0.010, amplitude: 3,  speed: 0.028, alpha: 0.20 },
+      { length: 0.008, amplitude: 6,  speed: 0.022, alpha: 0.35 }
+    ];
+
+    // 红涨绿跌
+    var r, g, b;
+    if (isProfit) { r = 238; g = 44;  b = 44; }
+    else          { r = 28;  g = 168; b = 77; }
+
+    waves.forEach(function(wave) {
+      ctx.beginPath();
+
+      if (isProfit) {
+        // 赚：从左下贴底 → 往右上涌起
+        ctx.moveTo(0, height);
+        for (var x = 0; x <= width; x += 2) {
+          var progress = x / width;
+          var baseY = height * (1 - progress * fillRatio);
+          var y = baseY + Math.sin(x * wave.length + time * wave.speed) * wave.amplitude;
+          ctx.lineTo(x, y);
+        }
+        ctx.lineTo(width, height);
+      } else {
+        // 亏：从左上最高 → 往右下泄落
+        ctx.moveTo(0, 0);
+        for (var x = 0; x <= width; x += 2) {
+          var progress = x / width;
+          var baseY = height * progress * fillRatio;
+          var y = baseY + Math.sin(x * wave.length + time * wave.speed) * wave.amplitude;
+          ctx.lineTo(x, y);
+        }
+        ctx.lineTo(width, 0);
+      }
+
+      ctx.closePath();
+
+      var grad = ctx.createLinearGradient(0, isProfit ? 0 : height, 0, isProfit ? height : 0);
+      grad.addColorStop(0, 'rgba(' + r + ',' + g + ',' + b + ',' + (wave.alpha + 0.15) + ')');
+      grad.addColorStop(1, 'rgba(' + r + ',' + g + ',' + b + ',0.02)');
+      ctx.fillStyle = grad;
+      ctx.fill();
+    });
+
+    // 表层高光线
+    ctx.beginPath();
+    var topWave = waves[2];
+    for (var x = 0; x <= width; x += 2) {
+      var progress = x / width;
+      var baseY;
+      if (isProfit) {
+        baseY = height * (1 - progress * fillRatio);
+      } else {
+        baseY = height * progress * fillRatio;
+      }
+      var y = baseY + Math.sin(x * topWave.length + time * topWave.speed) * topWave.amplitude;
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    var hl = isProfit ? 'rgba(238,44,44,0.6)' : 'rgba(28,168,77,0.6)';
+    ctx.strokeStyle = hl;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    time++;
+    requestAnimationFrame(draw);
+  }
+
+  waitAndStart();
+
+  window.addEventListener('resize', resize);
+}
+
+function renderFluidWaves() {
+  var dailyPnL = 0, totalPnL = 0, totalMv = 1, totalPnLPct = 0;
+  if (typeof getDailyPnL === 'function')       dailyPnL = getDailyPnL();
+  if (typeof getTotalPnLAmount === 'function') totalPnL = getTotalPnLAmount();
+  if (typeof getTotalMarketValue === 'function') totalMv = getTotalMarketValue();
+  if (typeof getTotalPnLPercent === 'function') totalPnLPct = getTotalPnLPercent();
+
+  // 当日收益率
+  var dailyPct = totalMv > 0 ? (dailyPnL / totalMv * 100) : 0;
+  // fillRatio = |pct| / 10，上限 1
+  var dailyFill = Math.min(Math.abs(dailyPct) / 10, 1);
+  var totalFill = Math.min(Math.abs(totalPnLPct) / 10, 1);
+
+  initFluidWave('dailyWave', dailyFill, dailyPnL >= 0);
+  initFluidWave('totalWave', totalFill, totalPnL >= 0);
+}
+
+// 保持兼容旧调用名
+function renderSparklines() {
+  renderFluidWaves();
 }

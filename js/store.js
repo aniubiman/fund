@@ -15,8 +15,6 @@
 // ===========================
 
 const STORAGE_KEY = 'fund_portfolio_v2';
-const THEME_KEY = 'fund_theme';
-
 const DEFAULT_PORTFOLIO = {
   cash: 500000,        // 初始现金 50 万
   holdings: [],        // { code, shares, costNav, addedAt }
@@ -107,19 +105,41 @@ function getTotalPnLPercent() {
 }
 
 /**
- * 今日预估盈亏（基于各持仓估算涨跌幅计算）
+ * 今日预估盈亏（昨日收盘价 → 今日估算净值 的差值）
  */
 function getDailyPnL() {
   return window.PF.holdings.reduce((sum, h) => {
     const cache = window.API ? window.API.NAV_CACHE : {};
     const fd = cache[h.code];
-    if (!fd || fd.gszzl === undefined) return sum;
-    const mv = getHoldingMarketValue(h);
-    const gszzl = parseFloat(fd.gszzl);
-    if (gszzl === 0) return sum;
-    // 反推今日盈亏 = 市值 * 涨跌幅 / (1 + 涨跌幅)
-    return sum + mv * gszzl / (100 + gszzl);
+    if (!fd) return sum;
+    const gsz = parseFloat(fd.gsz);    // 今日估算净值
+    const dwjz = parseFloat(fd.dwjz);  // 昨日确认收盘净值
+    if (!gsz || !dwjz) return sum;
+    // 直接算：份额 × (今日净值 - 昨日净值)
+    return sum + h.shares * (gsz - dwjz);
   }, 0);
+}
+
+/**
+ * 用 API 的 dwjz 修正旧持仓的 costNav（之前可能错用 gsz 买入）
+ * 在每次刷新数据后调用，幂等安全
+ */
+function normalizeHoldingsCostNav() {
+  var cache = window.API ? window.API.NAV_CACHE : {};
+  var changed = false;
+  window.PF.holdings.forEach(function(h) {
+    var fd = cache[h.code];
+    if (!fd) return;
+    var dwjz = parseFloat(fd.dwjz);
+    if (!dwjz) return;
+    // 如果 costNav 跟 dwjz 差超过 0.1%，说明可能是旧数据，修正为 dwjz
+    var diff = Math.abs(h.costNav - dwjz) / dwjz;
+    if (diff > 0.001) {
+      h.costNav = dwjz;
+      changed = true;
+    }
+  });
+  if (changed) savePortfolio();
 }
 
 /**
@@ -243,23 +263,6 @@ function deleteTransaction(id) {
 function clearTransactions() {
   window.PF.transactions = [];
   savePortfolio();
-}
-
-// ===========================
-//  主题
-// ===========================
-
-function loadTheme() {
-  const theme = localStorage.getItem(THEME_KEY) || 'light';
-  document.body.setAttribute('data-theme', theme);
-}
-
-function toggleTheme() {
-  const current = document.body.getAttribute('data-theme');
-  const next = current === 'dark' ? 'light' : 'dark';
-  document.body.setAttribute('data-theme', next);
-  localStorage.setItem(THEME_KEY, next);
-  return next;
 }
 
 // ===========================

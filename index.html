@@ -3,80 +3,153 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>我的基金模拟盘</title>
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<title>模拟基金盘 · Portfolio Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="js/icons.js"></script>
 </head>
-<body data-theme="light">
+<body>
+
+<!-- ====== SVG 玻璃畸变滤镜（全局复用） ====== -->
+<svg style="position:absolute;width:0;height:0;overflow:hidden;" aria-hidden="true">
+  <defs>
+    <filter id="glass-distortion" x="-20%" y="-20%" width="140%" height="140%" filterUnits="objectBoundingBox">
+      <!-- 分形噪波生成 -->
+      <feTurbulence type="fractalNoise" baseFrequency="0.001 0.005" numOctaves="1" seed="17" result="turbulence"/>
+      <!-- Gamma 映射 -->
+      <feComponentTransfer in="turbulence" result="mapped">
+        <feFuncR type="gamma" amplitude="1" exponent="10" offset="0.5"/>
+        <feFuncG type="gamma" amplitude="0" exponent="1" offset="0"/>
+        <feFuncB type="gamma" amplitude="0" exponent="1" offset="0.5"/>
+      </feComponentTransfer>
+      <!-- 高斯模糊柔化 -->
+      <feGaussianBlur in="turbulence" stdDeviation="3" result="softMap"/>
+      <!-- 高光反射（镜面光照） -->
+      <feSpecularLighting in="softMap" surfaceScale="5" specularConstant="1" specularExponent="100" lightingColor="white" result="specLight">
+        <fePointLight x="-200" y="-200" z="300"/>
+      </feSpecularLighting>
+      <!-- 合成光照 -->
+      <feComposite in="specLight" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" result="litImage"/>
+      <!-- 位移映射（玻璃折射畸变） -->
+      <feDisplacementMap in="SourceGraphic" in2="softMap" scale="80" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <!-- 简化版滤镜：仅畸变，无高光的玻璃效果 -->
+    <filter id="glass-subtle" x="-10%" y="-10%" width="120%" height="120%" filterUnits="objectBoundingBox">
+      <feTurbulence type="fractalNoise" baseFrequency="0.002 0.003" numOctaves="1" seed="42" result="turbulence"/>
+      <feGaussianBlur in="turbulence" stdDeviation="4" result="softMap"/>
+      <feDisplacementMap in="SourceGraphic" in2="softMap" scale="6" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <!-- 容器玻璃滤镜（用于按钮/卡片的玻璃畸变） -->
+    <filter id="container-glass" x="-20%" y="-20%" width="140%" height="140%" colorInterpolationFilters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.05 0.05" numOctaves="1" seed="1" result="turbulence"/>
+      <feGaussianBlur in="turbulence" stdDeviation="2" result="blurredNoise"/>
+      <feDisplacementMap in="SourceGraphic" in2="blurredNoise" scale="40" xChannelSelector="R" yChannelSelector="B" result="displaced"/>
+      <feGaussianBlur in="displaced" stdDeviation="2" result="finalBlur"/>
+      <feComposite in="finalBlur" in2="finalBlur" operator="over"/>
+    </filter>
+  </defs>
+</svg>
+
+<!-- ====== Liquid Glass 动态网格背景 ====== -->
+<div class="bg-mesh-container">
+  <div class="mesh-blob mesh-blob-1"></div>
+  <div class="mesh-blob mesh-blob-2"></div>
+  <div class="mesh-blob mesh-blob-3"></div>
+</div>
 
 <!-- ====== 登录/注册页面 ====== -->
 <div id="login-page" class="login-page">
-  <div class="login-card">
-    <div style="text-align:center; margin-bottom:28px;">
-      <div style="font-size:48px; margin-bottom:8px;">📈</div>
-      <h1 style="font-size:22px; font-weight:700; color:var(--text-primary); margin:0;">模拟基金盘</h1>
-      <p style="font-size:12px; color:var(--text-muted); margin:4px 0 0;">PORTFOLIO SIMULATOR</p>
+  <!-- Three.js 着色器动态背景 -->
+  <div id="shader-background" class="shader-background"></div>
+  <!-- 英文主标题 -->
+  <div class="login-hero-title">PORTFOLIO<br>SIMULATOR</div>
+  <div class="login-card" id="login-main-card" data-tilt>
+    <!-- Glass Layer 1: backdrop blur + distortion -->
+    <div class="glass-layer-1"></div>
+    <!-- Glass Layer 2: white overlay -->
+    <div class="glass-layer-2"></div>
+    <!-- Glass Layer 3: inner highlight -->
+    <div class="glass-layer-3"></div>
+
+    <!-- Content -->
+    <div class="login-content">
+      <div class="login-header">
+        <div class="login-logo icon-xl" data-icon="logo"></div>
+        <h1>模拟基金盘</h1>
+        <p class="login-subtitle">PORTFOLIO SIMULATOR</p>
+      </div>
+
+      <!-- 登录/注册切换按钮 -->
+      <div class="login-tabs" id="login-tabs">
+        <button class="login-tab active" id="tab-login-btn" onclick="switchLoginTab('login')">登录</button>
+        <button class="login-tab" id="tab-register-btn" onclick="switchLoginTab('register')">注册</button>
+      </div>
+
+      <!-- 登录表单 -->
+      <form id="login-form" class="login-form" onsubmit="return handleLogin(event)">
+        <div class="form-group">
+          <label class="form-label">手机号</label>
+          <input type="tel" class="form-input" id="login-phone" placeholder="输入注册手机号" maxlength="11" autocomplete="tel">
+        </div>
+        <div class="form-group">
+          <label class="form-label">密码</label>
+          <input type="password" class="form-input" id="login-password" placeholder="输入密码" autocomplete="current-password">
+        </div>
+        <div class="remember-row">
+          <input type="checkbox" id="login-remember" checked>
+          <label for="login-remember">记住我（下次自动登录）</label>
+        </div>
+        <button type="submit" class="glass-btn-login">登录</button>
+        <p id="login-error" style="color:var(--loss); font-size:12px; text-align:center; margin-top:14px; display:none;"></p>
+      </form>
+
+      <!-- 注册表单 -->
+      <form id="register-form" class="login-form" style="display:none;" onsubmit="return handleRegister(event)">
+        <div class="form-group">
+          <label class="form-label">手机号</label>
+          <input type="tel" class="form-input" id="reg-phone" placeholder="输入手机号" maxlength="11" autocomplete="tel">
+        </div>
+        <div class="form-group">
+          <label class="form-label">设置密码（至少 6 位）</label>
+          <input type="password" class="form-input" id="reg-password" placeholder="输入密码" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label class="form-label">确认密码</label>
+          <input type="password" class="form-input" id="reg-password2" placeholder="再次输入密码" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label class="form-label">昵称</label>
+          <input type="text" class="form-input" id="reg-username" placeholder="起个响亮的名字" maxlength="12">
+        </div>
+        <div class="form-group">
+          <label class="form-label">选一个头像</label>
+          <div class="avatar-grid" id="avatar-grid"></div>
+          <input type="hidden" id="reg-avatar" value="{&quot;letter&quot;:&quot;牛&quot;,&quot;color&quot;:&quot;#F59E0B&quot;}">
+        </div>
+        <button type="submit" class="glass-btn-login">注册</button>
+        <p id="reg-error" style="color:var(--loss); font-size:12px; text-align:center; margin-top:14px; display:none;"></p>
+      </form>
     </div>
-
-    <!-- 登录/注册切换按钮 -->
-    <div class="login-tabs">
-      <button class="login-tab active" id="tab-login-btn" onclick="switchLoginTab('login')">登录</button>
-      <button class="login-tab" id="tab-register-btn" onclick="switchLoginTab('register')">注册</button>
-    </div>
-
-    <!-- 登录表单 -->
-    <form id="login-form" class="login-form" onsubmit="return handleLogin(event)">
-      <div class="form-group">
-        <label class="form-label">手机号</label>
-        <input type="tel" class="form-input" id="login-phone" placeholder="输入注册手机号" maxlength="11" autocomplete="tel">
-      </div>
-      <div class="form-group">
-        <label class="form-label">密码</label>
-        <input type="password" class="form-input" id="login-password" placeholder="输入密码" autocomplete="current-password">
-      </div>
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:20px;">
-        <input type="checkbox" id="login-remember" checked style="accent-color:var(--accent);">
-        <label for="login-remember" style="font-size:13px; color:var(--text-muted); cursor:pointer;">记住我（下次自动登录）</label>
-      </div>
-      <button type="submit" class="btn btn-primary" style="width:100%; padding:12px;">登录</button>
-      <p id="login-error" style="color:var(--loss); font-size:12px; text-align:center; margin-top:12px; display:none;"></p>
-    </form>
-
-    <!-- 注册表单 -->
-    <form id="register-form" class="login-form" style="display:none;" onsubmit="return handleRegister(event)">
-      <div class="form-group">
-        <label class="form-label">手机号</label>
-        <input type="tel" class="form-input" id="reg-phone" placeholder="输入手机号" maxlength="11" autocomplete="tel">
-      </div>
-      <div class="form-group">
-        <label class="form-label">设置密码（至少 6 位）</label>
-        <input type="password" class="form-input" id="reg-password" placeholder="输入密码" autocomplete="new-password">
-      </div>
-      <div class="form-group">
-        <label class="form-label">确认密码</label>
-        <input type="password" class="form-input" id="reg-password2" placeholder="再次输入密码" autocomplete="new-password">
-      </div>
-      <div class="form-group">
-        <label class="form-label">昵称</label>
-        <input type="text" class="form-input" id="reg-username" placeholder="起个响亮的名字" maxlength="12">
-      </div>
-      <div class="form-group">
-        <label class="form-label">选一个头像</label>
-        <div class="avatar-grid" id="avatar-grid"></div>
-        <input type="hidden" id="reg-avatar" value="🐂">
-      </div>
-      <button type="submit" class="btn btn-primary" style="width:100%; padding:12px;">注册</button>
-      <p id="reg-error" style="color:var(--loss); font-size:12px; text-align:center; margin-top:12px; display:none;"></p>
-    </form>
   </div>
 
-  <!-- 已登录用户信息 + 进入按钮 -->
-  <div id="auto-login-info" class="login-card" style="display:none;">
-    <div style="text-align:center;">
-      <div style="font-size:64px; margin-bottom:12px;" id="auto-avatar">🐂</div>
-      <h2 style="font-size:20px; font-weight:700; color:var(--text-primary); margin:0;" id="auto-name">--</h2>
-      <p style="font-size:12px; color:var(--text-muted); margin:4px 0 20px;" id="auto-phone">--</p>
-      <button class="btn btn-primary" style="width:100%; padding:12px;" onclick="enterApp()">进入应用</button>
-      <button class="btn btn-outline btn-sm" style="width:100%; margin-top:10px;" onclick="doLogout()">切换账号</button>
+  <!-- 已登录用户信息 + 进入按钮（独立卡片，也给玻璃效果） -->
+  <div id="auto-login-info" class="login-card" data-tilt style="display:none;">
+    <div class="glass-layer-1"></div>
+    <div class="glass-layer-2"></div>
+    <div class="glass-layer-3"></div>
+    <div class="login-content" style="text-align:center;">
+      <div class="glass-dock-login">
+        <div class="glass-dock-avatar" id="auto-avatar"></div>
+        <div class="glass-dock-name" id="auto-name">--</div>
+        <div class="glass-dock-phone" id="auto-phone">--</div>
+      </div>
+      <button class="glass-btn-login" onclick="enterApp()" style="margin-bottom:12px;">进入应用</button>
+      <button class="glass-btn-login-secondary" onclick="doLogout()">切换账号</button>
     </div>
   </div>
 </div>
@@ -91,40 +164,40 @@
 <!-- ====== 侧边栏 ====== -->
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-logo">
-    <div class="logo-icon">📈</div>
+    <div class="logo-icon" data-icon="logo"></div>
     <div>
       <h1>模拟基金盘</h1>
       <span>PORTFOLIO SIMULATOR</span>
     </div>
   </div>
 
-  <nav class="sidebar-nav">
-    <button class="nav-item active" data-page="dashboard" onclick="switchPage('dashboard')">
+  <nav class="sidebar-nav" aria-label="主导航">
+    <button class="nav-item active" data-page="dashboard" onclick="switchPage('dashboard')" aria-label="仪表盘" aria-current="page">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
         <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
       </svg>
       仪表盘
     </button>
-    <button class="nav-item" data-page="holdings" onclick="switchPage('holdings')">
+    <button class="nav-item" data-page="holdings" onclick="switchPage('holdings')" aria-label="持仓明细">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
       </svg>
       持仓明细
     </button>
-    <button class="nav-item" data-page="trade" onclick="switchPage('trade')">
+    <button class="nav-item" data-page="trade" onclick="switchPage('trade')" aria-label="交易买卖">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
       </svg>
       交易买卖
     </button>
-    <button class="nav-item" data-page="history" onclick="switchPage('history')">
+    <button class="nav-item" data-page="history" onclick="switchPage('history')" aria-label="交易记录">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
       </svg>
       交易记录
     </button>
-    <button class="nav-item" data-page="friends" onclick="switchPage('friends')">
+    <button class="nav-item" data-page="friends" onclick="switchPage('friends')" aria-label="好友对战">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
         <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
@@ -134,10 +207,21 @@
   </nav>
 
   <div class="sidebar-footer">
-    <button class="theme-toggle" onclick="onToggleTheme()">
-      <span id="theme-label">🌙 暗色模式</span>
-      <div class="theme-switch"></div>
-    </button>
+    <div class="theme-picker-label">外观</div>
+    <div class="theme-picker">
+      <button class="theme-btn active" data-theme-name="light" onclick="Theme.switchTo('light'); updateThemePickerUI()">
+        <span class="theme-dot light-dot"></span> 亮色
+      </button>
+      <button class="theme-btn" data-theme-name="dark" onclick="Theme.switchTo('dark'); updateThemePickerUI()">
+        <span class="theme-dot dark-dot"></span> 暗色
+      </button>
+      <button class="theme-btn" data-theme-name="warm" onclick="Theme.switchTo('warm'); updateThemePickerUI()">
+        <span class="theme-dot warm-dot"></span> 暖色
+      </button>
+      <button class="theme-btn" data-theme-name="auto" onclick="Theme.switchTo('auto'); updateThemePickerUI()">
+        <span class="theme-dot auto-dot"></span> 自动
+      </button>
+    </div>
   </div>
 </aside>
 
@@ -148,7 +232,7 @@
   <div id="page-dashboard" class="page">
     <div class="header">
       <div class="header-left">
-        <h2>📊 投资概览</h2>
+        <h2><span data-icon="chartbar" class="icon-md icon-inline"></span>投资概览</h2>
         <p>实时追踪你的基金投资组合表现</p>
       </div>
       <div class="header-right">
@@ -156,41 +240,60 @@
           <span class="dot"></span>
           <span id="updateTime">等待加载…</span>
         </div>
-        <button class="btn btn-outline btn-sm" onclick="refreshData()">🔄 刷新数据</button>
-        <button class="btn btn-primary btn-sm" onclick="openTradeModal()">＋ 快速交易</button>
+        <button class="btn btn-outline btn-sm" onclick="refreshData()"><span data-icon="refresh" class="icon-sm"></span> 刷新数据</button>
+        <button class="btn btn-primary btn-sm" onclick="openTradeModal()"><span data-icon="plus" class="icon-sm"></span> 快速交易</button>
       </div>
     </div>
 
     <!-- 统计卡片 -->
     <div class="stats-grid">
-      <div class="stat-card accent animate-in">
-        <div class="stat-label"><span class="icon accent">💰</span> 总资产</div>
-        <div class="stat-value" id="totalAssets">¥ --</div>
-        <div class="stat-sub">市值 + 可用现金</div>
+      <div class="stat-card accent animate-in stagger-1" data-tilt>
+        <div class="stat-label"><span class="icon accent" data-icon="wallet"></span> 总资产估值</div>
+        <div class="stat-value" id="totalAssets" data-skeleton="value">¥ --</div>
+        <div class="stat-sub">包含当前持仓市值与可用现金</div>
       </div>
-      <div class="stat-card profit animate-in">
-        <div class="stat-label"><span class="icon profit">📈</span> 累计盈亏</div>
-        <div class="stat-value" id="totalPnL">¥ --</div>
-        <div class="stat-change up" id="totalPnLPercent">--</div>
+
+      <div class="stat-card animate-in stagger-2" id="dailyCard" data-tilt>
+        <div class="stat-card-top">
+          <div class="stat-label"><span class="icon warning" data-icon="calendar"></span> 今日变动</div>
+          <div class="stat-value" id="dailyPnL" data-skeleton="value">¥ --</div>
+          <div class="stat-change" id="dailyPnLPercent">--</div>
+        </div>
+        <canvas class="fluid-wave-canvas" id="dailyWave"></canvas>
       </div>
-      <div class="stat-card animate-in" id="dailyCard">
-        <div class="stat-label"><span class="icon warning">📅</span> 今日盈亏</div>
-        <div class="stat-value" id="dailyPnL">¥ --</div>
-        <div class="stat-change" id="dailyPnLPercent">--</div>
+
+      <div class="stat-card profit animate-in stagger-3" data-tilt>
+        <div class="stat-card-top">
+          <div class="stat-label"><span class="icon profit" data-icon="trendup"></span> 累计收益</div>
+          <div class="stat-value" id="totalPnL" data-skeleton="value">¥ --</div>
+          <div class="stat-change up" id="totalPnLPercent">--</div>
+        </div>
+        <canvas class="fluid-wave-canvas" id="totalWave"></canvas>
       </div>
-      <div class="stat-card accent animate-in">
-        <div class="stat-label"><span class="icon accent">💵</span> 可用现金</div>
-        <div class="stat-value" id="cashBalance">¥ --</div>
-        <div class="stat-sub" id="positionRatio">--</div>
+
+      <div class="stat-card accent animate-in stagger-4" data-tilt style="display:flex;align-items:center;justify-content:space-between;overflow:hidden;">
+        <div style="position:relative;z-index:2;">
+          <div class="stat-label"><span class="icon accent" data-icon="cash"></span> 资金池</div>
+          <div class="stat-value" id="cashBalance" data-skeleton="value">¥ --</div>
+          <div class="stat-sub" id="positionRatio">--</div>
+        </div>
+        <div style="position:relative;z-index:1;opacity:0.08;pointer-events:none;flex-shrink:0;">
+          <svg width="160" height="120" viewBox="0 0 120 80" style="color:var(--accent);">
+            <circle cx="65" cy="40" r="38" fill="none" stroke="currentColor" stroke-width="0.8"/>
+            <circle cx="65" cy="40" r="25" fill="none" stroke="currentColor" stroke-width="2"/>
+            <circle cx="65" cy="40" r="12" fill="none" stroke="currentColor" stroke-width="0.8"/>
+            <text x="65" y="52" font-size="32" text-anchor="middle" font-weight="900" font-family="Arial" fill="currentColor">¥</text>
+          </svg>
+        </div>
       </div>
     </div>
 
     <!-- 图表 -->
     <div class="charts-row">
-      <div class="chart-card animate-in">
+      <div class="chart-card animate-in stagger-5">
         <div class="chart-header">
           <div>
-            <div class="chart-title">📉 组合收益走势</div>
+            <div class="chart-title"><span data-icon="trenddown" class="icon-sm icon-inline"></span>组合收益走势</div>
             <div class="chart-subtitle">基于历史净值模拟回测</div>
           </div>
           <div class="chart-period">
@@ -202,27 +305,27 @@
           </div>
         </div>
         <div class="chart-body" style="height:300px;">
-          <canvas id="trendChart"></canvas>
+          <canvas id="trendChart" data-skeleton="chart"></canvas>
         </div>
       </div>
-      <div class="chart-card animate-in">
+      <div class="chart-card animate-in stagger-6">
         <div class="chart-header">
           <div>
-            <div class="chart-title">🍩 资产配置</div>
+            <div class="chart-title"><span data-icon="piechart" class="icon-sm icon-inline"></span>资产配置</div>
             <div class="chart-subtitle">按基金类型分布</div>
           </div>
         </div>
         <div class="chart-body" style="height:220px; display:flex; align-items:center; justify-content:center;">
-          <canvas id="allocationChart" width="220" height="220"></canvas>
+          <canvas id="allocationChart" width="220" height="220" data-skeleton="chart"></canvas>
         </div>
         <div id="allocationLegend" style="padding:0 16px 16px; display:flex; flex-wrap:wrap; gap:12px; justify-content:center;"></div>
       </div>
     </div>
 
     <!-- 持仓概览 -->
-    <div class="section-card animate-in">
+    <div class="section-card animate-in stagger-7">
       <div class="section-header">
-        <div class="section-title">📋 持仓概览</div>
+        <div class="section-title"><span data-icon="clipboard" class="icon-sm icon-inline"></span>持仓概览</div>
         <div class="section-actions">
           <button class="btn btn-outline btn-sm" onclick="switchPage('holdings')">查看全部 →</button>
         </div>
@@ -251,11 +354,11 @@
   <div id="page-holdings" class="page" style="display:none;">
     <div class="header">
       <div class="header-left">
-        <h2>📋 持仓明细</h2>
+        <h2><span data-icon="clipboard" class="icon-md icon-inline"></span>持仓明细</h2>
         <p>管理你的基金持仓，查看详细盈亏分析</p>
       </div>
       <div class="header-right">
-        <button class="btn btn-primary btn-sm" onclick="openTradeModal()">＋ 快速交易</button>
+        <button class="btn btn-primary btn-sm" onclick="openTradeModal()"><span data-icon="plus" class="icon-sm"></span> 快速交易</button>
       </div>
     </div>
     <div class="section-card">
@@ -286,13 +389,13 @@
   <div id="page-trade" class="page" style="display:none;">
     <div class="header">
       <div class="header-left">
-        <h2>📈 交易买卖</h2>
+        <h2><span data-icon="trendup" class="icon-md icon-inline"></span>交易买卖</h2>
         <p>搜索基金代码或名称，实时获取净值进行交易</p>
       </div>
     </div>
     <div class="section-card">
       <div class="section-header">
-        <div class="section-title">🔍 基金搜索（支持代码/名称）</div>
+        <div class="section-title"><span data-icon="search" class="icon-sm icon-inline"></span>基金搜索（支持代码/名称）</div>
       </div>
       <div style="padding:24px;">
         <div class="form-group">
@@ -328,8 +431,8 @@
               </div>
             </div>
             <div style="margin-top:16px; display:flex; gap:10px;">
-              <button class="btn btn-primary" style="flex:1;" onclick="executeTradeFromPage('buy')">🟢 买入</button>
-              <button class="btn" style="flex:1; color:var(--loss); border:1px solid var(--loss); background:transparent; padding:8px 18px; border-radius:var(--radius-sm); font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;" onclick="executeTradeFromPage('sell')">🔴 卖出</button>
+              <button class="btn-liquid flex-1" onclick="executeTradeFromPage('buy')"><span data-icon="buy" class="icon-sm"></span> 买入</button>
+              <button class="btn btn-sell flex-1" onclick="executeTradeFromPage('sell')"><span data-icon="sell" class="icon-sm"></span> 卖出</button>
             </div>
           </div>
         </div>
@@ -341,11 +444,11 @@
   <div id="page-history" class="page" style="display:none;">
     <div class="header">
       <div class="header-left">
-        <h2>🕐 交易记录</h2>
+        <h2><span data-icon="history" class="icon-md icon-inline"></span>交易记录</h2>
         <p>查看所有历史交易记录</p>
       </div>
       <div class="header-right">
-        <button class="btn btn-outline btn-sm" onclick="historyClearAll()">🗑 清空记录</button>
+        <button class="btn btn-outline btn-sm" onclick="historyClearAll()"><span data-icon="trash" class="icon-sm"></span> 清空记录</button>
       </div>
     </div>
     <div class="section-card">
@@ -376,13 +479,13 @@
     <div id="friends-setup" style="display:none;">
       <div class="header">
         <div class="header-left">
-          <h2>👥 好友对战</h2>
+          <h2><span data-icon="users" class="icon-md icon-inline"></span>好友对战</h2>
           <p>先设置一个昵称，让你的朋友认出你</p>
         </div>
       </div>
       <div class="section-card" style="max-width:420px; margin:0 auto;">
         <div style="padding:28px; text-align:center;">
-          <div style="font-size:48px; margin-bottom:16px;">🎯</div>
+          <div style="display:flex; justify-content:center; margin-bottom:16px; color:var(--accent);" data-icon="target" class="icon-xl"></div>
           <div class="form-group">
             <label class="form-label">你的昵称</label>
             <input type="text" class="form-input" id="friends-nickname-input"
@@ -398,14 +501,14 @@
     <div id="friends-lobby" style="display:none;">
       <div class="header">
         <div class="header-left">
-          <h2>👥 好友对战</h2>
+          <h2><span data-icon="users" class="icon-md icon-inline"></span>好友对战</h2>
           <p id="friends-lobby-sub">创建或加入一个房间，和朋友 PK 收益</p>
         </div>
       </div>
       <div class="charts-row">
         <div class="chart-card">
           <div style="text-align:center; padding:8px 0;">
-            <div style="font-size:40px; margin-bottom:8px;">🏠</div>
+            <div style="display:flex; justify-content:center; margin-bottom:8px; color:var(--accent);" data-icon="home" class="icon-xl"></div>
             <div style="font-weight:700; font-size:16px; margin-bottom:4px; color:var(--text-primary);">创建房间</div>
             <div style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">创建一个新房间，把邀请码发给朋友</div>
             <div class="form-group">
@@ -413,13 +516,13 @@
                 placeholder="房间名称（可选）" maxlength="20">
             </div>
             <button class="btn btn-primary" style="width:100%;" onclick="createRoomAction()">
-              ✨ 创建房间
+              <span data-icon="sparkle" class="icon-sm"></span> 创建房间
             </button>
           </div>
         </div>
         <div class="chart-card">
           <div style="text-align:center; padding:8px 0;">
-            <div style="font-size:40px; margin-bottom:8px;">🔗</div>
+            <div style="display:flex; justify-content:center; margin-bottom:8px; color:var(--accent);" data-icon="link" class="icon-xl"></div>
             <div style="font-weight:700; font-size:16px; margin-bottom:4px; color:var(--text-primary);">加入房间</div>
             <div style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">输入朋友发给你的 6 位邀请码</div>
             <div class="form-group">
@@ -429,7 +532,7 @@
                 oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')">
             </div>
             <button class="btn btn-primary" style="width:100%;" onclick="joinRoomAction()">
-              🚀 加入房间
+              <span data-icon="rocket" class="icon-sm"></span> 加入房间
             </button>
           </div>
         </div>
@@ -440,13 +543,13 @@
     <div id="friends-room" style="display:none;">
       <div class="header">
         <div class="header-left">
-          <h2>👥 <span id="room-name-display">好友对战</span></h2>
+          <h2><span data-icon="users" class="icon-md icon-inline"></span><span id="room-name-display">好友对战</span></h2>
           <p>邀请码：<strong id="room-invite-code" style="color:var(--accent);letter-spacing:2px;font-family:monospace;">------</strong>
-            <button class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="copyInviteCode()">📋 复制</button>
+            <button class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="copyInviteCode()"><span data-icon="copy" class="icon-sm"></span> 复制</button>
           </p>
         </div>
         <div class="header-right">
-          <button class="btn btn-outline btn-sm" onclick="refreshFriendsPage()">🔄 刷新</button>
+          <button class="btn btn-outline btn-sm" onclick="refreshFriendsPage()"><span data-icon="refresh" class="icon-sm"></span> 刷新</button>
           <button class="btn btn-outline btn-sm" style="color:var(--loss); border-color:var(--loss);" onclick="leaveRoomAction()">退出房间</button>
         </div>
       </div>
@@ -454,7 +557,7 @@
       <!-- 排行榜 -->
       <div class="section-card" style="margin-bottom:16px;">
         <div class="section-header">
-          <div class="section-title">🏆 收益率排行榜</div>
+          <div class="section-title"><span data-icon="trophy" class="icon-sm icon-inline"></span>收益率排行榜</div>
           <div style="font-size:12px; color:var(--text-muted);" id="leaderboard-update-time"></div>
         </div>
         <div class="table-wrap">
@@ -480,8 +583,10 @@
       <!-- 好友持仓详情（点击排行榜行展开） -->
       <div id="friend-portfolio-panel" style="display:none;" class="section-card">
         <div class="section-header">
-          <div class="section-title" id="friend-portfolio-title">📋 好友持仓</div>
-          <button class="btn btn-sm btn-outline" onclick="closeFriendPortfolio()">✕ 收起</button>
+          <div class="section-title" id="friend-portfolio-title">
+            <span data-icon="clipboard" class="icon-sm icon-inline"></span>好友持仓
+          </div>
+          <button class="btn btn-sm btn-outline" onclick="closeFriendPortfolio()"><span data-icon="close" class="icon-sm"></span> 收起</button>
         </div>
         <div class="table-wrap">
           <table>
@@ -505,7 +610,7 @@
       <!-- 房间成员 -->
       <div class="section-card">
         <div class="section-header">
-          <div class="section-title">👤 房间成员</div>
+          <div class="section-title"><span data-icon="user" class="icon-sm icon-inline"></span>房间成员</div>
           <span style="font-size:12px; color:var(--text-muted);" id="member-count"></span>
         </div>
         <div style="padding:12px 24px; display:flex; flex-wrap:wrap; gap:10px;" id="member-list"></div>
@@ -518,8 +623,8 @@
 
 <!-- 快速交易弹窗 -->
 <div class="modal-overlay" id="tradeModalOverlay" onclick="closeTradeModal(event)">
-  <div class="modal" onclick="event.stopPropagation()">
-    <h3>📈 快速交易</h3>
+  <div class="modal glass-card-pro" onclick="event.stopPropagation()">
+    <h3><span data-icon="trendup" class="icon-sm icon-inline"></span>快速交易</h3>
     <div class="form-group">
       <label class="form-label">搜索基金</label>
       <input type="text" class="form-input" id="modalFundSearch"
@@ -528,15 +633,15 @@
     </div>
     <div class="fund-search-result" id="modalSearchResult"></div>
     <div id="modalFundInfo" style="display:none;">
-      <div style="background:var(--bg); border-radius:var(--radius-sm); padding:14px; margin-bottom:16px;">
+      <div style="background:var(--bg-input); border-radius:var(--radius-sm); padding:14px; margin-bottom:16px;">
         <div style="font-weight:700; font-size:15px;" id="modalFundName">--</div>
         <div style="font-size:12px; color:var(--text-muted);" id="modalFundNavInfo">--</div>
       </div>
       <div class="form-group">
         <label class="form-label">交易类型</label>
         <div style="display:flex; gap:8px;">
-          <button class="btn btn-primary btn-sm" id="modalBuyBtn" style="flex:1;" onclick="setModalTradeType('buy')">🟢 买入</button>
-          <button class="btn btn-outline btn-sm" id="modalSellBtn" style="flex:1; color:var(--loss); border-color:var(--loss);" onclick="setModalTradeType('sell')">🔴 卖出</button>
+          <button class="btn btn-primary btn-sm flex-1 btn-shimmer" id="modalBuyBtn" onclick="setModalTradeType('buy')"><span data-icon="buy" class="icon-sm"></span> 买入</button>
+          <button class="btn btn-sell btn-sm flex-1" id="modalSellBtn" onclick="setModalTradeType('sell')"><span data-icon="sell" class="icon-sm"></span> 卖出</button>
         </div>
       </div>
       <div class="form-group">
@@ -552,7 +657,7 @@
     </div>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeTradeModal()">取消</button>
-      <button class="btn btn-primary" id="modalConfirmBtn" onclick="executeModalTrade()">确认交易</button>
+      <button class="btn-liquid" id="modalConfirmBtn" onclick="executeModalTrade()">确认交易</button>
     </div>
   </div>
 </div>
@@ -565,11 +670,26 @@
 
 <!-- ====== JS 模块（按依赖顺序加载） ====== -->
 <script src="js/api.js"></script>
+<script src="js/theme.js"></script>
 <script src="js/store.js"></script>
 <script src="js/supabase.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>
+<script src="js/shader-bg.js"></script>
+
+<!-- 注入 data-icon SVG 图标 + 启动着色器 -->
+<script>
+injectIcons();
+// 初始化登录页面着色器背景
+if (window.ShaderBG) {
+  window.ShaderBG.init(document.getElementById('shader-background'));
+}
+// 为登录卡片启用 3D 倾斜
+setTimeout(function() {
+  if (typeof initTiltEffect === 'function') initTiltEffect();
+}, 300);
+</script>
 </body>
 </html>

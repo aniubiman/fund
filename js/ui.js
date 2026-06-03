@@ -54,6 +54,111 @@ function qsa(selector) { return document.querySelectorAll(selector); }
 //  统计卡片
 // ===========================
 
+/** 数字滚动动画（easeOutExpo 缓动） */
+function animateCountUp(el, target, formatter, duration) {
+  if (!el) return;
+  var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (prefersReduced) {
+    el.textContent = formatter(target);
+    return;
+  }
+  duration = duration || 1200;
+  var fps = 30;
+  var totalFrames = Math.round((duration / 1000) * fps);
+  var frame = 0;
+  var startVal = 0;
+
+  // 尝试从当前文本中提取数值作为起始值
+  var currentText = el.textContent.replace(/[^0-9.\-]/g, '');
+  if (currentText) {
+    startVal = parseFloat(currentText) || 0;
+  }
+
+  function easeOutExpo(t) {
+    return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+  }
+
+  var counter = setInterval(function() {
+    frame++;
+    var progress = easeOutExpo(frame / totalFrames);
+    var currentVal = startVal + (target - startVal) * progress;
+    el.textContent = formatter(currentVal);
+    if (frame >= totalFrames) {
+      clearInterval(counter);
+      el.textContent = formatter(target);
+    }
+  }, 1000 / fps);
+}
+
+// ===========================
+//  Odometer 滚动数字效果
+// ===========================
+
+var _odometerCache = {};
+
+function initOdometer(el, strVal) {
+  if (!el) return;
+  var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (prefersReduced) {
+    el.innerText = strVal;
+    el.classList.remove('odometer');
+    return;
+  }
+
+  // 修复：如果被骨架屏清空了 DOM（没有子元素），即使数值没变也必须强制重建
+  var elId = el.id || el.className;
+  if (_odometerCache[elId] === strVal && el.classList.contains('odometer') && el.children.length > 0) {
+    return;
+  }
+  _odometerCache[elId] = strVal;
+
+  // 清理旧内容
+  el.innerHTML = '';
+  el.classList.add('odometer');
+
+  var chars = strVal.split('');
+
+  chars.forEach(function(char, i) {
+    if (char === ',') {
+      var s = document.createElement('span');
+      s.className = 'odometer-static';
+      s.innerText = ',';
+      el.appendChild(s);
+    } else if (!isNaN(parseInt(char))) {
+      var col = document.createElement('span');
+      col.className = 'odometer-digit';
+
+      // 预先填充 0-9
+      for (var j = 0; j <= 9; j++) {
+        var numSpan = document.createElement('span');
+        numSpan.innerText = j;
+        col.appendChild(numSpan);
+      }
+
+      // 初始归零（transition 由 CSS .odometer-digit 提供，这里不碰它）
+      col.style.transform = 'translateY(0)';
+      el.appendChild(col);
+
+      var targetDigit = parseInt(char);
+
+      // CSS transition 规则一直生效，延迟后只改 transform 即可触发滚动
+      // 用 em 而非 %：每个数字高 1em，避免各浏览器对 inline-flex 百分比计算的差异
+      // 每个数字的 transition-duration 略不同，营造齿轮依次转动的机械感
+      col.style.transitionDuration = (0.8 + i * 0.1) + 's';
+
+      setTimeout(function() {
+        col.style.transform = 'translateY(-' + targetDigit + 'em)';
+      }, 50);
+
+    } else {
+      var st = document.createElement('span');
+      st.className = 'odometer-static';
+      st.innerText = char;
+      el.appendChild(st);
+    }
+  });
+}
+
 function renderStats() {
   const totalMv = getTotalMarketValue();
   const totalAssets = totalMv + window.PF.cash;
@@ -62,30 +167,53 @@ function renderStats() {
   const dailyPnL = getDailyPnL();
   const posRatio = getPositionRatio();
 
-  gel('totalAssets').textContent = fmtMoneyFull(totalAssets);
-  gel('cashBalance').textContent = fmtMoneyFull(window.PF.cash);
-  gel('totalPnL').textContent = (totalPnL >= 0 ? '+' : '') + fmtMoneyFull(totalPnL);
+  // Odometer 滚动数字
+  initOdometer(gel('totalAssets'), fmtMoneyFull(totalAssets));
+  initOdometer(gel('cashBalance'), fmtMoneyFull(window.PF.cash));
+  initOdometer(gel('totalPnL'), (totalPnL >= 0 ? '+' : '') + fmtMoneyFull(totalPnL));
+  initOdometer(gel('dailyPnL'), (dailyPnL >= 0 ? '+' : '') + fmtMoneyFull(dailyPnL));
 
   const pctEl = gel('totalPnLPercent');
   pctEl.textContent = fmtPct(totalPnLPct);
   pctEl.className = 'stat-change ' + (totalPnLPct >= 0 ? 'up' : 'down');
 
-  gel('positionRatio').textContent = `持仓 ${posRatio.toFixed(1)}%`;
+  gel('positionRatio').textContent = '持仓 ' + posRatio.toFixed(1) + '%';
 
   // 今日盈亏
-  const dEl = gel('dailyPnL');
   const dPctEl = gel('dailyPnLPercent');
   const dCard = gel('dailyCard');
-  dEl.textContent = (dailyPnL >= 0 ? '+' : '') + fmtMoneyFull(dailyPnL);
 
   const tv = getTotalMarketValue();
   const dailyPct = tv > 0 ? (dailyPnL / tv * 100) : 0;
   dPctEl.textContent = fmtPct(dailyPct);
   dPctEl.className = 'stat-change ' + (dailyPnL >= 0 ? 'up' : 'down');
-  dCard.className = 'stat-card ' + (dailyPnL >= 0 ? 'profit' : 'loss');
+  dCard.classList.remove('profit', 'loss');
+  dCard.classList.add(dailyPnL >= 0 ? 'profit' : 'loss');
 
   const iconEl = dCard.querySelector('.stat-label .icon');
-  if (iconEl) iconEl.className = 'icon ' + (dailyPnL >= 0 ? 'profit' : 'loss');
+  if (iconEl) {
+    iconEl.classList.remove('profit', 'loss', 'accent', 'warning');
+    iconEl.classList.add(dailyPnL >= 0 ? 'profit' : 'loss');
+  }
+
+  // 累计盈亏卡片也动态着色
+  const pnlCard = gel('totalPnL').closest('.stat-card');
+  if (pnlCard) {
+    pnlCard.classList.remove('profit', 'loss');
+    pnlCard.classList.add(totalPnL >= 0 ? 'profit' : 'loss');
+    const pnlIcon = pnlCard.querySelector('.stat-label .icon');
+    if (pnlIcon) {
+      pnlIcon.classList.remove('profit', 'loss', 'accent', 'warning');
+      pnlIcon.classList.add(totalPnL >= 0 ? 'profit' : 'loss');
+    }
+  }
+
+  // 绘制迷你走势图
+  if (typeof renderSparklines === 'function') {
+    requestAnimationFrame(function() {
+      renderSparklines();
+    });
+  }
 }
 
 // ===========================
@@ -97,8 +225,8 @@ function renderHoldingsTable() {
   const detailBody = gel('holdingsDetailBody');
 
   if (window.PF.holdings.length === 0) {
-    const empty = '<tr><td colspan="11"><div class="empty-state"><p>📭 暂无持仓，快去搜索并买入你的第一只基金吧！</p></div></td></tr>';
-    if (summaryBody) summaryBody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><p>📭 暂无持仓</p></div></td></tr>';
+    const empty = '<tr><td colspan="11"><div class="empty-state"><p>' + iconEmpty('icon-md') + ' 暂无持仓，快去搜索并买入你的第一只基金吧！</p></div></td></tr>';
+    if (summaryBody) summaryBody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><p>' + iconEmpty('icon-md') + ' 暂无持仓</p></div></td></tr>';
     if (detailBody) detailBody.innerHTML = empty;
     return;
   }
@@ -188,7 +316,7 @@ function renderHistory() {
   if (!body) return;
 
   if (window.PF.transactions.length === 0) {
-    body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><p>📝 暂无交易记录</p></div></td></tr>';
+    body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><p>' + iconEmpty('icon-md') + ' 暂无交易记录</p></div></td></tr>';
     return;
   }
 
@@ -196,7 +324,7 @@ function renderHistory() {
     <tr>
       <td>${escHtml(t.date)}</td>
       <td class="${t.type === 'buy' ? 'pnl-positive' : 'pnl-negative'}" style="font-weight:600;">
-        ${t.type === 'buy' ? '🟢 买入' : '🔴 卖出'}
+        ${t.type === 'buy' ? iconBuy('icon-sm') + ' 买入' : iconSell('icon-sm') + ' 卖出'}
       </td>
       <td><span class="fund-code">${t.code}</span></td>
       <td>${escHtml(t.name)}</td>
@@ -228,21 +356,56 @@ function historyClearAll() {
 let currentPage = 'dashboard';
 
 function switchPage(page) {
+  if (page === currentPage) return;
   currentPage = page;
-  qsa('.page').forEach(p => p.style.display = 'none');
-  const target = gel('page-' + page);
-  if (target) target.style.display = 'block';
 
-  qsa('.nav-item').forEach(n => n.classList.remove('active'));
+  qsa('.page').forEach(p => {
+    if (p.style.display !== 'none') {
+      p.style.animation = 'none';
+      p.offsetHeight; // trigger reflow
+      p.style.animation = '';
+    }
+    p.style.display = 'none';
+  });
+
+  const target = gel('page-' + page);
+  if (target) {
+    target.style.display = 'block';
+    // Re-trigger staggered animations for the new page
+    target.querySelectorAll('.animate-in').forEach((el, i) => {
+      el.style.animation = 'none';
+      el.offsetHeight;
+      el.style.animation = '';
+      el.classList.remove('stagger-1', 'stagger-2', 'stagger-3', 'stagger-4',
+        'stagger-5', 'stagger-6', 'stagger-7', 'stagger-8');
+      el.classList.add('stagger-' + (i + 1));
+    });
+  }
+
+  // Update nav active state
+  qsa('.nav-item').forEach(n => {
+    n.classList.remove('active');
+    n.removeAttribute('aria-current');
+  });
   const navBtn = qs(`[data-page="${page}"]`);
-  if (navBtn) navBtn.classList.add('active');
+  if (navBtn) {
+    navBtn.classList.add('active');
+    navBtn.setAttribute('aria-current', 'page');
+  }
 
   // 切换到特定页面时刷新对应内容
+  if (page === 'dashboard') {
+    _odometerCache = {};         // 清缓存 → 里程表每次进入都重新滚动
+    renderStats();
+    if (typeof renderFluidWaves === 'function') {
+      setTimeout(function() { renderFluidWaves(); }, 250);
+    }
+  }
   if (page === 'history') renderHistory();
   if (page === 'trade') resetTradePage();
   if (page === 'friends') renderFriendsPage();
 
-  setTimeout(renderAllCharts, 100);
+  setTimeout(renderAllCharts, 150);
 }
 
 // ===========================
@@ -275,7 +438,7 @@ async function onSearchInput(value) {
 
   // 显示加载状态
   container.classList.add('open');
-  container.innerHTML = '<div style="padding:12px 14px;font-size:12px;color:var(--text-muted);">🔍 搜索中…</div>';
+  container.innerHTML = '<div style="padding:12px 14px;font-size:12px;color:var(--text-muted);">' + iconSearch('icon-sm') + ' 搜索中…</div>';
 
   const results = await window.API.searchFunds(value);
 
@@ -311,7 +474,7 @@ async function onSelectFund(code, name) {
   // 获取实时净值
   try {
     const data = await window.API.fetchFundNAV(code);
-    selectedFundNAV = parseFloat(data.gsz) || parseFloat(data.dwjz);
+    selectedFundNAV = parseFloat(data.dwjz) || parseFloat(data.gsz);
     gel('tradeFundName').textContent = data.name || name;
     gel('tradeFundCode').textContent = `${code} · 净值日期 ${data.jzrq || '--'} · 更新 ${data.gztime || '--'}`;
     gel('tradeFundNav').textContent = '¥' + selectedFundNAV.toFixed(4);
@@ -353,7 +516,7 @@ function executeTradeFromPage(type) {
   if (!result.success) return showToast(result.error, 'error');
 
   const label = type === 'buy' ? '买入' : '卖出';
-  showToast(`✅ 成功${label} ${selectedFund.name} ¥${amount.toFixed(2)}(${shares.toFixed(2)}份)`, 'success');
+  showToast(iconCheck('icon-sm') + ` 成功${label} ${selectedFund.name} ¥${amount.toFixed(2)}(${shares.toFixed(2)}份)`, 'success');
 
   gel('tradeAmount').value = '';
   gel('tradeShares').value = '';
@@ -405,7 +568,7 @@ async function modalSearchInput(value) {
   }
 
   container.classList.add('open');
-  container.innerHTML = '<div style="padding:12px 14px;font-size:12px;color:var(--text-muted);">🔍 搜索中…</div>';
+  container.innerHTML = '<div style="padding:12px 14px;font-size:12px;color:var(--text-muted);">' + iconSearch('icon-sm') + ' 搜索中…</div>';
 
   const results = await window.API.searchFunds(value);
 
@@ -437,7 +600,7 @@ async function modalSelectFund(code, name) {
 
   try {
     const data = await window.API.fetchFundNAV(code);
-    modalFundNAV = parseFloat(data.gsz) || parseFloat(data.dwjz);
+    modalFundNAV = parseFloat(data.dwjz) || parseFloat(data.gsz);
     const change = parseFloat(data.gszzl) || 0;
     gel('modalFundNavInfo').textContent =
       `最新净值 ¥${modalFundNAV.toFixed(4)} · ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
@@ -496,7 +659,7 @@ function executeModalTrade() {
   if (!result.success) return showToast(result.error, 'error');
 
   const label = modalTradeType === 'buy' ? '买入' : '卖出';
-  showToast(`✅ 成功${label} ${modalSelectedFund.name} ¥${amount.toFixed(2)}(${shares.toFixed(2)}份)`, 'success');
+  showToast(iconCheck('icon-sm') + ` 成功${label} ${modalSelectedFund.name} ¥${amount.toFixed(2)}(${shares.toFixed(2)}份)`, 'success');
 
   closeTradeModal();
   renderAll();
@@ -511,10 +674,10 @@ function showToast(msg, type = 'info') {
   if (!container) return;
   const toast = document.createElement('div');
   toast.className = 'toast ' + type;
-  toast.textContent = msg;
+  toast.innerHTML = msg;
   container.appendChild(toast);
   setTimeout(() => {
-    toast.style.animation = 'slideOut 0.3s ease forwards';
+    toast.classList.add('toast-out');
     setTimeout(() => toast.remove(), 300);
   }, 2500);
 }
@@ -544,12 +707,7 @@ document.addEventListener('click', function (e) {
 //  主题切换
 // ===========================
 
-function onToggleTheme() {
-  const next = toggleTheme();
-  const label = gel('theme-label');
-  if (label) label.textContent = next === 'dark' ? '☀️ 亮色模式' : '🌙 暗色模式';
-  setTimeout(renderAllCharts, 150);
-}
+// 主题已固定为科技风暗色，不再需要切换
 
 // ===========================
 //  移动端侧边栏
@@ -568,11 +726,59 @@ function renderAll() {
   renderHoldingsTable();
   renderHistory();
   renderAllCharts();
+  // 流体波浪（独立于 odometer，每次 renderAll 都触发）
+  if (typeof renderFluidWaves === 'function') {
+    setTimeout(function() { renderFluidWaves(); }, 200);
+  }
+  // 确保 3D tilt 生效
+  setTimeout(function() {
+    initTiltEffect();
+  }, 100);
 }
 
 // ===========================
 //  数据刷新
 // ===========================
+
+// ========== 骨架屏加载状态 ==========
+
+function showSkeletons() {
+  // 统计卡片骨架
+  document.querySelectorAll('[data-skeleton="value"]').forEach(function(el) {
+    el.classList.add('skeleton', 'skeleton-value');
+    el.innerHTML = ''; // 核心：彻底清空
+    el.classList.remove('odometer'); // 核心：移除类名，迫使下次取消拦截重新播放动画
+  });
+  // 表格骨架
+  document.querySelectorAll('[data-skeleton="table"]').forEach(function(el) {
+    el.innerHTML = Array(3).fill('<tr class="skeleton-row"><td colspan="12"><div class="skeleton skeleton-table-row"></div></td></tr>').join('');
+  });
+  // 图表骨架 (保持不变)
+  document.querySelectorAll('[data-skeleton="chart"]').forEach(function(el) {
+    var container = el.closest('.chart-body');
+    if (container) {
+      var skel = document.createElement('div');
+      skel.className = 'skeleton skeleton-chart';
+      skel.style.cssText = 'position:absolute;inset:0;';
+      skel.setAttribute('data-skelly', '1');
+      container.style.position = 'relative';
+      container.appendChild(skel);
+      el.style.opacity = '0';
+    }
+  });
+}
+
+function hideSkeletons() {
+  document.querySelectorAll('[data-skeleton="value"]').forEach(function(el) {
+    el.classList.remove('skeleton', 'skeleton-value');
+  });
+  document.querySelectorAll('[data-skelly]').forEach(function(el) {
+    el.remove();
+  });
+  document.querySelectorAll('[data-skeleton="chart"]').forEach(function(el) {
+    el.style.opacity = '1';
+  });
+}
 
 async function refreshData() {
   const codes = window.API ? window.API.getHoldingCodes(window.PF.holdings) : [];
@@ -580,13 +786,17 @@ async function refreshData() {
     gel('updateTime').textContent = '暂无持仓，无需刷新';
     return;
   }
+  showSkeletons();
   gel('updateTime').textContent = '正在刷新…';
   const results = await window.API.fetchAllFundNAV(codes);
   gel('updateTime').textContent = results.length > 0
     ? `数据更新于 ${results[0].gztime || '--'}`
     : '刷新失败，请检查网络';
+  // 修正旧持仓 costNav（之前可能用 gsz 买入，现在统一用 dwjz）
+  if (typeof normalizeHoldingsCostNav === 'function') normalizeHoldingsCostNav();
   renderAll();
-  if (results.length > 0) showToast(`✅ 已更新 ${results.length} 只基金数据`, 'success');
+  hideSkeletons();
+  if (results.length > 0) showToast(iconCheck('icon-sm') + ` 已更新 ${results.length} 只基金数据`, 'success');
 }
 
 // ===========================
@@ -680,11 +890,11 @@ async function createRoomAction() {
   const result = await window.SB.createRoom(name);
   if (result.error) return showToast(result.error, 'error');
 
-  showToast('🎉 房间创建成功！邀请码：' + result.room.invite_code, 'success');
+  showToast(iconConfetti('icon-sm') + ' 房间创建成功！邀请码：' + result.room.invite_code, 'success');
   // 订阅实时变动
   window.SB.subscribeRoomRealtime(result.room.id, (payload) => {
-    if (payload.eventType === 'INSERT') showToast('👋 有新朋友加入了房间！', 'info');
-    if (payload.eventType === 'DELETE') showToast('👋 有人离开了房间', 'info');
+    if (payload.eventType === 'INSERT') showToast(iconWave('icon-sm') + ' 有新朋友加入了房间！', 'info');
+    if (payload.eventType === 'DELETE') showToast(iconWave('icon-sm') + ' 有人离开了房间', 'info');
     if (currentPage === 'friends') renderFriendsPage();
   });
   renderFriendsPage();
@@ -702,15 +912,15 @@ async function joinRoomAction() {
   if (result.alreadyIn) {
     showToast('你已在此房间中', 'info');
   } else {
-    showToast('🎉 成功加入房间！', 'success');
+    showToast(iconConfetti('icon-sm') + ' 成功加入房间！', 'success');
   }
 
   // 订阅实时变动
   const room = window.SB.getCurrentRoom();
   if (room) {
     window.SB.subscribeRoomRealtime(room.id, (payload) => {
-      if (payload.eventType === 'INSERT') showToast('👋 有新朋友加入了房间！', 'info');
-      if (payload.eventType === 'DELETE') showToast('👋 有人离开了房间', 'info');
+      if (payload.eventType === 'INSERT') showToast(iconWave('icon-sm') + ' 有新朋友加入了房间！', 'info');
+      if (payload.eventType === 'DELETE') showToast(iconWave('icon-sm') + ' 有人离开了房间', 'info');
       if (currentPage === 'friends') renderFriendsPage();
     });
   }
@@ -731,7 +941,7 @@ function copyInviteCode() {
   const room = window.SB.getCurrentRoom();
   if (!room) return;
   navigator.clipboard.writeText(room.invite_code).then(() => {
-    showToast('📋 邀请码已复制！发给朋友吧', 'success');
+    showToast(iconCopy('icon-sm') + ' 邀请码已复制！发给朋友吧', 'success');
   }).catch(() => {
     prompt('复制邀请码：', room.invite_code);
   });
@@ -760,7 +970,7 @@ async function renderLeaderboard() {
     timeEl.textContent = '更新于 ' + new Date(data[0].snapped_at).toLocaleTimeString('zh-CN');
   }
 
-  const medals = ['🥇', '🥈', '🥉'];
+  const medals = [iconMedal('icon-md', 'gold'), iconMedal('icon-md', 'silver'), iconMedal('icon-md', 'bronze')];
 
   tbody.innerHTML = data.map((row, i) => {
     const rank = i + 1;
@@ -795,7 +1005,7 @@ async function viewFriendPortfolio(userId, username) {
     return;
   }
 
-  gel('friend-portfolio-title').textContent = '📋 ' + escHtml(username) + ' 的持仓';
+  gel('friend-portfolio-title').innerHTML = iconClipboard('icon-sm') + ' ' + escHtml(username) + ' 的持仓';
   gel('friend-portfolio-panel').style.display = 'block';
 
   const tbody = gel('friend-portfolio-body');
@@ -855,3 +1065,258 @@ function timeAgo(isoStr) {
   if (hours < 24) return hours + '小时前';
   return Math.floor(hours / 24) + '天前';
 }
+
+// ===========================
+//  UI 交互增强
+// ===========================
+
+/** Ripple 点击波纹效果 */
+function initRippleEffect() {
+  document.addEventListener('click', function(e) {
+    var target = e.target.closest('.btn, .btn-table, .nav-item, .theme-btn, .period-btn, .login-tab');
+    if (!target) return;
+
+    // 移除旧 ripple
+    var old = target.querySelector('.ripple-effect');
+    if (old) old.remove();
+
+    var ripple = document.createElement('span');
+    ripple.className = 'ripple-effect';
+
+    var rect = target.getBoundingClientRect();
+    var size = Math.max(rect.width, rect.height);
+    ripple.style.width = ripple.style.height = size + 'px';
+    ripple.style.left = (e.clientX - rect.left - size / 2) + 'px';
+    ripple.style.top = (e.clientY - rect.top - size / 2) + 'px';
+
+    target.style.position = target.style.position || 'relative';
+    target.style.overflow = 'hidden';
+    target.appendChild(ripple);
+
+    setTimeout(function() { ripple.remove(); }, 600);
+  });
+}
+
+/** 滑动 Nav 指示器 */
+function initNavIndicator() {
+  var sidebar = document.querySelector('.sidebar-nav');
+  if (!sidebar) return;
+
+  var indicator = document.createElement('div');
+  indicator.className = 'nav-indicator';
+  sidebar.appendChild(indicator);
+
+  function updateIndicator() {
+    var active = sidebar.querySelector('.nav-item.active');
+    if (active) {
+      var parentRect = sidebar.getBoundingClientRect();
+      var activeRect = active.getBoundingClientRect();
+      indicator.style.top = (activeRect.top - parentRect.top + 9) + 'px';
+      indicator.style.height = (activeRect.height - 18) + 'px';
+    }
+  }
+
+  // 初始化位置
+  setTimeout(updateIndicator, 100);
+
+  // 监听 nav 点击
+  sidebar.addEventListener('click', function(e) {
+    var navItem = e.target.closest('.nav-item');
+    if (navItem) {
+      // 延迟等 active class 更新后
+      setTimeout(updateIndicator, 50);
+    }
+  });
+
+  // 窗口大小变化时更新
+  window.addEventListener('resize', function() {
+    setTimeout(updateIndicator, 100);
+  });
+}
+
+/** 数值闪动动画 */
+function flashValue(el) {
+  if (!el) return;
+  el.classList.remove('flash-update');
+  void el.offsetWidth; // trigger reflow
+  el.classList.add('flash-update');
+}
+
+/** 3D 卡片倾斜效果（仅 [data-tilt] 卡片） */
+function initTiltEffect() {
+  var cards = document.querySelectorAll('[data-tilt]');
+  if (cards.length === 0) return;
+
+  cards.forEach(function(card) {
+    // 防止重复绑定
+    if (card.getAttribute('data-tilt-bound') === '1') return;
+    card.setAttribute('data-tilt-bound', '1');
+
+    card.addEventListener('mousemove', function(e) {
+      var rect = card.getBoundingClientRect();
+      var x = e.clientX - rect.left;
+      var y = e.clientY - rect.top;
+      var centerX = rect.width / 2;
+      var centerY = rect.height / 2;
+      var rotateX = ((y - centerY) / centerY) * -6;
+      var rotateY = ((x - centerX) / centerX) * 6;
+
+      card.style.setProperty('transform',
+        'perspective(1000px) rotateX(' + rotateX + 'deg) rotateY(' + rotateY + 'deg) scale3d(1.02, 1.02, 1.02)',
+        'important');
+    });
+
+    card.addEventListener('mouseleave', function() {
+      card.style.setProperty('transform',
+        'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)',
+        'important');
+      card.style.setProperty('transition',
+        'transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+        'important');
+    });
+
+    card.addEventListener('mouseenter', function() {
+      card.style.setProperty('transition', 'none', 'important');
+    });
+  });
+}
+
+/** 键盘快捷键 */
+function initKeyboardShortcuts() {
+  document.addEventListener('keydown', function(e) {
+    // Escape: 关闭模态框
+    if (e.key === 'Escape') {
+      var overlay = gel('tradeModalOverlay');
+      if (overlay && overlay.classList.contains('open')) {
+        closeTradeModal();
+        return;
+      }
+      // 关闭移动端侧边栏
+      var sidebar = gel('sidebar');
+      if (sidebar && sidebar.classList.contains('open')) {
+        toggleSidebar();
+        return;
+      }
+    }
+    // Ctrl+K / Cmd+K: 打开快速交易
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      openTradeModal();
+    }
+    // 数字键切换页面
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && document.activeElement === document.body) {
+      var pages = { '1': 'dashboard', '2': 'holdings', '3': 'trade', '4': 'history', '5': 'friends' };
+      if (pages[e.key]) {
+        switchPage(pages[e.key]);
+      }
+    }
+  });
+}
+
+/** 增强 renderStats：数值变化时闪动 */
+var _prevStatsValues = {};
+(function() {
+  var origRenderStats = renderStats;
+  renderStats = function() {
+    // 修复：不要去读取 DOM 的 textContent（因为里面塞满了隐藏的 0-9），直接获取真实数值进行比对
+    var currentVals = {
+      'totalAssets': getTotalMarketValue() + window.PF.cash,
+      'totalPnL': getTotalPnLAmount(),
+      'dailyPnL': getDailyPnL(),
+      'cashBalance': window.PF.cash
+    };
+
+    origRenderStats(); // 执行真实渲染
+
+    // 比较真实数据，如果发生变化则触发光晕闪动
+    Object.keys(currentVals).forEach(function(id) {
+      var el = gel(id);
+      if (!el) return;
+      var afterVal = currentVals[id].toFixed(2); // 取两位小数进行严谨对比
+      
+      if (_prevStatsValues[id] !== undefined && _prevStatsValues[id] !== afterVal) {
+        flashValue(el);
+      }
+      _prevStatsValues[id] = afterVal;
+    });
+  };
+})();
+
+// 页面加载后初始化（不依赖登录状态的基础交互）
+document.addEventListener('DOMContentLoaded', function() {
+  initRippleEffect();
+  initNavIndicator();
+  initKeyboardShortcuts();
+  // Tilt 由 renderAll() 在首次渲染后触发，无需在此初始化
+});
+
+/* ============================================
+   NEXT-GEN UI INTERACTIONS V2
+   ============================================ */
+
+/**
+ * 1. 主题自适应探照灯 (Spotlight)
+ */
+function initSpotlightEffect() {
+  const cards = document.querySelectorAll('.stat-card, .chart-card');
+  
+  cards.forEach(card => {
+    if(!card.querySelector('.glass-spotlight')) {
+      const spot = document.createElement('div');
+      spot.className = 'glass-spotlight';
+      card.appendChild(spot);
+    }
+
+    card.addEventListener('mousemove', e => {
+      const rect = card.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      // 将鼠标坐标注入 CSS 变量
+      card.style.setProperty('--mouse-x', `${x}px`);
+      card.style.setProperty('--mouse-y', `${y}px`);
+    });
+  });
+}
+
+/**
+ * 2. 微阻尼磁性按钮 (Magnetic Buttons)
+ */
+function initMagneticButtons() {
+  const magnets = document.querySelectorAll('.nav-item'); // 让左侧菜单也拥有磁吸质感
+  
+  magnets.forEach(magnet => {
+    magnet.addEventListener('mousemove', e => {
+      const rect = magnet.getBoundingClientRect();
+      const x = e.clientX - rect.left - rect.width / 2;
+      const y = e.clientY - rect.top - rect.height / 2;
+      
+      // 控制在 10% 的偏移幅度，呈现极简高级感
+      magnet.style.transform = `translate(${x * 0.1}px, ${y * 0.1}px)`;
+    });
+
+    magnet.addEventListener('mouseleave', () => {
+      magnet.style.transition = 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)';
+      magnet.style.transform = `translate(0px, 0px)`;
+      setTimeout(() => { magnet.style.transition = ''; }, 500);
+    });
+  });
+}
+
+// 拦截原有的渲染函数，确保刷新数据后特效不丢失
+const originalRenderAll = window.renderAll || function(){};
+window.renderAll = function() {
+  originalRenderAll();
+  setTimeout(() => {
+    initSpotlightEffect();
+    initMagneticButtons();
+  }, 100);
+};
+
+// 初始加载绑定特效
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    initSpotlightEffect();
+    initMagneticButtons();
+  }, 500);
+});
+
