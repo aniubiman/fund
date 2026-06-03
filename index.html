@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的基金模拟盘</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-theme="light">
+
+<!-- 移动端菜单按钮 -->
+<button class="mobile-menu-btn" onclick="toggleSidebar()" aria-label="菜单">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M3 12h18M3 6h18M3 18h18"/>
+  </svg>
+</button>
+
+<!-- ====== 侧边栏 ====== -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon">📈</div>
+    <div>
+      <h1>模拟基金盘</h1>
+      <span>PORTFOLIO SIMULATOR</span>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <button class="nav-item active" data-page="dashboard" onclick="switchPage('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+        <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+      </svg>
+      仪表盘
+    </button>
+    <button class="nav-item" data-page="holdings" onclick="switchPage('holdings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+      </svg>
+      持仓明细
+    </button>
+    <button class="nav-item" data-page="trade" onclick="switchPage('trade')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
+      </svg>
+      交易买卖
+    </button>
+    <button class="nav-item" data-page="history" onclick="switchPage('history')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+      </svg>
+      交易记录
+    </button>
+    <button class="nav-item" data-page="friends" onclick="switchPage('friends')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+      好友对战
+    </button>
+  </nav>
+
+  <div class="sidebar-footer">
+    <button class="theme-toggle" onclick="onToggleTheme()">
+      <span id="theme-label">🌙 暗色模式</span>
+      <div class="theme-switch"></div>
+    </button>
+  </div>
+</aside>
+
+<!-- ====== 主内容区 ====== -->
+<main class="main">
+
+  <!-- 仪表盘 -->
+  <div id="page-dashboard" class="page">
+    <div class="header">
+      <div class="header-left">
+        <h2>📊 投资概览</h2>
+        <p>实时追踪你的基金投资组合表现</p>
+      </div>
+      <div class="header-right">
+        <div class="last-update">
+          <span class="dot"></span>
+          <span id="updateTime">等待加载…</span>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="refreshData()">🔄 刷新数据</button>
+        <button class="btn btn-primary btn-sm" onclick="openTradeModal()">＋ 快速交易</button>
+      </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="stats-grid">
+      <div class="stat-card accent animate-in">
+        <div class="stat-label"><span class="icon accent">💰</span> 总资产</div>
+        <div class="stat-value" id="totalAssets">¥ --</div>
+        <div class="stat-sub">市值 + 可用现金</div>
+      </div>
+      <div class="stat-card profit animate-in">
+        <div class="stat-label"><span class="icon profit">📈</span> 累计盈亏</div>
+        <div class="stat-value" id="totalPnL">¥ --</div>
+        <div class="stat-change up" id="totalPnLPercent">--</div>
+      </div>
+      <div class="stat-card animate-in" id="dailyCard">
+        <div class="stat-label"><span class="icon warning">📅</span> 今日盈亏</div>
+        <div class="stat-value" id="dailyPnL">¥ --</div>
+        <div class="stat-change" id="dailyPnLPercent">--</div>
+      </div>
+      <div class="stat-card accent animate-in">
+        <div class="stat-label"><span class="icon accent">💵</span> 可用现金</div>
+        <div class="stat-value" id="cashBalance">¥ --</div>
+        <div class="stat-sub" id="positionRatio">--</div>
+      </div>
+    </div>
+
+    <!-- 图表 -->
+    <div class="charts-row">
+      <div class="chart-card animate-in">
+        <div class="chart-header">
+          <div>
+            <div class="chart-title">📉 组合收益走势</div>
+            <div class="chart-subtitle">基于历史净值模拟回测</div>
+          </div>
+          <div class="chart-period">
+            <button class="period-btn active" data-period="1M" onclick="setChartPeriod('1M', this)">1月</button>
+            <button class="period-btn" data-period="3M" onclick="setChartPeriod('3M', this)">3月</button>
+            <button class="period-btn" data-period="6M" onclick="setChartPeriod('6M', this)">6月</button>
+            <button class="period-btn" data-period="1Y" onclick="setChartPeriod('1Y', this)">1年</button>
+            <button class="period-btn" data-period="ALL" onclick="setChartPeriod('ALL', this)">全部</button>
+          </div>
+        </div>
+        <div class="chart-body" style="height:300px;">
+          <canvas id="trendChart"></canvas>
+        </div>
+      </div>
+      <div class="chart-card animate-in">
+        <div class="chart-header">
+          <div>
+            <div class="chart-title">🍩 资产配置</div>
+            <div class="chart-subtitle">按基金类型分布</div>
+          </div>
+        </div>
+        <div class="chart-body" style="height:220px; display:flex; align-items:center; justify-content:center;">
+          <canvas id="allocationChart" width="220" height="220"></canvas>
+        </div>
+        <div id="allocationLegend" style="padding:0 16px 16px; display:flex; flex-wrap:wrap; gap:12px; justify-content:center;"></div>
+      </div>
+    </div>
+
+    <!-- 持仓概览 -->
+    <div class="section-card animate-in">
+      <div class="section-header">
+        <div class="section-title">📋 持仓概览</div>
+        <div class="section-actions">
+          <button class="btn btn-outline btn-sm" onclick="switchPage('holdings')">查看全部 →</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>基金名称</th>
+              <th>持有份额</th>
+              <th>成本净值</th>
+              <th>最新净值</th>
+              <th>持仓市值</th>
+              <th>盈亏金额</th>
+              <th>收益率</th>
+              <th>今日涨幅</th>
+            </tr>
+          </thead>
+          <tbody id="holdingsSummaryBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 持仓明细 -->
+  <div id="page-holdings" class="page" style="display:none;">
+    <div class="header">
+      <div class="header-left">
+        <h2>📋 持仓明细</h2>
+        <p>管理你的基金持仓，查看详细盈亏分析</p>
+      </div>
+      <div class="header-right">
+        <button class="btn btn-primary btn-sm" onclick="openTradeModal()">＋ 快速交易</button>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>基金代码</th>
+              <th>基金名称</th>
+              <th>持有份额</th>
+              <th>成本净值</th>
+              <th>投资成本</th>
+              <th>最新净值</th>
+              <th>持仓市值</th>
+              <th>盈亏金额</th>
+              <th>收益率</th>
+              <th>今日涨幅</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="holdingsDetailBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 交易买卖 -->
+  <div id="page-trade" class="page" style="display:none;">
+    <div class="header">
+      <div class="header-left">
+        <h2>📈 交易买卖</h2>
+        <p>搜索基金代码或名称，实时获取净值进行交易</p>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title">🔍 基金搜索（支持代码/名称）</div>
+      </div>
+      <div style="padding:24px;">
+        <div class="form-group">
+          <label class="form-label">输入基金代码或名称</label>
+          <input type="text" class="form-input" id="fundSearchInput"
+            placeholder="例如：005827 或 易方达蓝筹…"
+            oninput="onSearchInput(this.value)">
+        </div>
+        <div class="fund-search-result" id="fundSearchResult"></div>
+
+        <div id="fundDetailCard" style="display:none; margin-top:16px;">
+          <div class="stat-card accent" style="padding:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <div style="font-weight:700; font-size:16px;" id="tradeFundName">--</div>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:4px;" id="tradeFundCode">--</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:22px; font-weight:700;" id="tradeFundNav">¥ --</div>
+                <div class="stat-change" id="tradeFundChange" style="justify-content:flex-end;">--</div>
+              </div>
+            </div>
+            <div style="margin-top:16px; display:flex; gap:12px;">
+              <div class="form-group" style="flex:1; margin-bottom:0;">
+                <label class="form-label">买入金额 (元)</label>
+                <input type="number" class="form-input" id="tradeAmount"
+                  placeholder="输入买入金额" min="1" step="0.01"
+                  oninput="onTradeAmountInput(this.value)">
+              </div>
+              <div class="form-group" style="flex:1; margin-bottom:0;">
+                <label class="form-label">预估份额</label>
+                <input type="text" class="form-input" id="tradeShares" readonly placeholder="自动计算">
+              </div>
+            </div>
+            <div style="margin-top:16px; display:flex; gap:10px;">
+              <button class="btn btn-primary" style="flex:1;" onclick="executeTradeFromPage('buy')">🟢 买入</button>
+              <button class="btn" style="flex:1; color:var(--loss); border:1px solid var(--loss); background:transparent; padding:8px 18px; border-radius:var(--radius-sm); font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;" onclick="executeTradeFromPage('sell')">🔴 卖出</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 交易记录 -->
+  <div id="page-history" class="page" style="display:none;">
+    <div class="header">
+      <div class="header-left">
+        <h2>🕐 交易记录</h2>
+        <p>查看所有历史交易记录</p>
+      </div>
+      <div class="header-right">
+        <button class="btn btn-outline btn-sm" onclick="historyClearAll()">🗑 清空记录</button>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>类型</th>
+              <th>基金代码</th>
+              <th>基金名称</th>
+              <th>份额</th>
+              <th>净值</th>
+              <th>金额</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 好友对战 -->
+  <div id="page-friends" class="page" style="display:none;">
+
+    <!-- 状态 1：未设置昵称 -->
+    <div id="friends-setup" style="display:none;">
+      <div class="header">
+        <div class="header-left">
+          <h2>👥 好友对战</h2>
+          <p>先设置一个昵称，让你的朋友认出你</p>
+        </div>
+      </div>
+      <div class="section-card" style="max-width:420px; margin:0 auto;">
+        <div style="padding:28px; text-align:center;">
+          <div style="font-size:48px; margin-bottom:16px;">🎯</div>
+          <div class="form-group">
+            <label class="form-label">你的昵称</label>
+            <input type="text" class="form-input" id="friends-nickname-input"
+              placeholder="起个响亮的名字…" maxlength="12"
+              onkeydown="if(event.key==='Enter')saveNickname()">
+          </div>
+          <button class="btn btn-primary" style="width:100%;" onclick="saveNickname()">确认昵称</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态 2：未加入房间（大厅） -->
+    <div id="friends-lobby" style="display:none;">
+      <div class="header">
+        <div class="header-left">
+          <h2>👥 好友对战</h2>
+          <p id="friends-lobby-sub">创建或加入一个房间，和朋友 PK 收益</p>
+        </div>
+      </div>
+      <div class="charts-row">
+        <div class="chart-card">
+          <div style="text-align:center; padding:8px 0;">
+            <div style="font-size:40px; margin-bottom:8px;">🏠</div>
+            <div style="font-weight:700; font-size:16px; margin-bottom:4px; color:var(--text-primary);">创建房间</div>
+            <div style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">创建一个新房间，把邀请码发给朋友</div>
+            <div class="form-group">
+              <input type="text" class="form-input" id="create-room-name"
+                placeholder="房间名称（可选）" maxlength="20">
+            </div>
+            <button class="btn btn-primary" style="width:100%;" onclick="createRoomAction()">
+              ✨ 创建房间
+            </button>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div style="text-align:center; padding:8px 0;">
+            <div style="font-size:40px; margin-bottom:8px;">🔗</div>
+            <div style="font-weight:700; font-size:16px; margin-bottom:4px; color:var(--text-primary);">加入房间</div>
+            <div style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">输入朋友发给你的 6 位邀请码</div>
+            <div class="form-group">
+              <input type="text" class="form-input" id="join-invite-code"
+                placeholder="邀请码（如 ABC123）" maxlength="6"
+                style="text-transform:uppercase; letter-spacing:4px; font-size:18px; font-family:monospace; text-align:center;"
+                oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')">
+            </div>
+            <button class="btn btn-primary" style="width:100%;" onclick="joinRoomAction()">
+              🚀 加入房间
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态 3：已在房间中（房间面板） -->
+    <div id="friends-room" style="display:none;">
+      <div class="header">
+        <div class="header-left">
+          <h2>👥 <span id="room-name-display">好友对战</span></h2>
+          <p>邀请码：<strong id="room-invite-code" style="color:var(--accent);letter-spacing:2px;font-family:monospace;">------</strong>
+            <button class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="copyInviteCode()">📋 复制</button>
+          </p>
+        </div>
+        <div class="header-right">
+          <button class="btn btn-outline btn-sm" onclick="refreshFriendsPage()">🔄 刷新</button>
+          <button class="btn btn-outline btn-sm" style="color:var(--loss); border-color:var(--loss);" onclick="leaveRoomAction()">退出房间</button>
+        </div>
+      </div>
+
+      <!-- 排行榜 -->
+      <div class="section-card" style="margin-bottom:16px;">
+        <div class="section-header">
+          <div class="section-title">🏆 收益率排行榜</div>
+          <div style="font-size:12px; color:var(--text-muted);" id="leaderboard-update-time"></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:50px;">排名</th>
+                <th>玩家</th>
+                <th>总资产</th>
+                <th>累计盈亏</th>
+                <th>收益率</th>
+                <th>更新时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboard-body">
+              <tr><td colspan="7"><div class="empty-state"><p>加载中…</p></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 好友持仓详情（点击排行榜行展开） -->
+      <div id="friend-portfolio-panel" style="display:none;" class="section-card">
+        <div class="section-header">
+          <div class="section-title" id="friend-portfolio-title">📋 好友持仓</div>
+          <button class="btn btn-sm btn-outline" onclick="closeFriendPortfolio()">✕ 收起</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>基金代码</th>
+                <th>基金名称</th>
+                <th>持有份额</th>
+                <th>成本净值</th>
+                <th>最新净值</th>
+                <th>持仓市值</th>
+                <th>盈亏</th>
+                <th>收益率</th>
+              </tr>
+            </thead>
+            <tbody id="friend-portfolio-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 房间成员 -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">👤 房间成员</div>
+          <span style="font-size:12px; color:var(--text-muted);" id="member-count"></span>
+        </div>
+        <div style="padding:12px 24px; display:flex; flex-wrap:wrap; gap:10px;" id="member-list"></div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<!-- 快速交易弹窗 -->
+<div class="modal-overlay" id="tradeModalOverlay" onclick="closeTradeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>📈 快速交易</h3>
+    <div class="form-group">
+      <label class="form-label">搜索基金</label>
+      <input type="text" class="form-input" id="modalFundSearch"
+        placeholder="输入基金代码或名称…"
+        oninput="modalSearchInput(this.value)">
+    </div>
+    <div class="fund-search-result" id="modalSearchResult"></div>
+    <div id="modalFundInfo" style="display:none;">
+      <div style="background:var(--bg); border-radius:var(--radius-sm); padding:14px; margin-bottom:16px;">
+        <div style="font-weight:700; font-size:15px;" id="modalFundName">--</div>
+        <div style="font-size:12px; color:var(--text-muted);" id="modalFundNavInfo">--</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">交易类型</label>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-primary btn-sm" id="modalBuyBtn" style="flex:1;" onclick="setModalTradeType('buy')">🟢 买入</button>
+          <button class="btn btn-outline btn-sm" id="modalSellBtn" style="flex:1; color:var(--loss); border-color:var(--loss);" onclick="setModalTradeType('sell')">🔴 卖出</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">买入金额 (元)</label>
+        <input type="number" class="form-input" id="modalAmount"
+          placeholder="输入买入金额" min="1" step="0.01"
+          oninput="onModalAmountInput(this.value)">
+      </div>
+      <div class="form-group">
+        <label class="form-label">预估份额</label>
+        <input type="text" class="form-input" id="modalShares" readonly placeholder="自动计算">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeTradeModal()">取消</button>
+      <button class="btn btn-primary" id="modalConfirmBtn" onclick="executeModalTrade()">确认交易</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast 容器 -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ====== Supabase JS SDK（CDN） ====== -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+<!-- ====== JS 模块（按依赖顺序加载） ====== -->
+<script src="js/api.js"></script>
+<script src="js/store.js"></script>
+<script src="js/supabase.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
