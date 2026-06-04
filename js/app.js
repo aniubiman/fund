@@ -68,7 +68,13 @@
     if (updateEl) updateEl.textContent = '暂无持仓，搜索基金开始交易吧';
   }
 
-  // 4. 首屏渲染
+  // 4. 启动主页面流体背景（登录着色器由 enterApp() 负责销毁）
+  if (window.FluidBG) {
+    window.FluidBG.setEnabled(true);
+    if (typeof updateFluidUI === 'function') updateFluidUI();
+  }
+
+  // 5. 首屏渲染
   renderAll();
   requestAnimationFrame(() => {
     requestAnimationFrame(() => renderAllCharts());

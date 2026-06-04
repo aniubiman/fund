@@ -17,8 +17,9 @@
 const STORAGE_KEY = 'fund_portfolio_v2';
 const DEFAULT_PORTFOLIO = {
   cash: 500000,        // 初始现金 50 万
-  holdings: [],        // { code, shares, costNav, addedAt }
+  holdings: [],        // { code, shares, costNav, addedAt, realizedPnL }
   transactions: [],    // { id, type, code, name, shares, nav, amount, date }
+  closedPnL: 0         // 已全部赎回的基金的历史盈亏合计
 };
 
 // ===========================
@@ -90,10 +91,18 @@ function getTotalCost() {
 }
 
 /**
- * 累计盈亏金额
+ * 累计盈亏 = 所有现存持仓的总盈亏 + 已清仓基金的历史盈亏
+ * 每只持仓的总盈亏 = 未实现(市值-成本) + 已实现(该基金部分赎回盈亏)
  */
 function getTotalPnLAmount() {
-  return getTotalMarketValue() - getTotalCost();
+  var today = new Date().toISOString().split('T')[0];
+  var total = window.PF.holdings.reduce(function(sum, h) {
+    if (h.addedAt >= today) return sum; // 确认日及之前无盈亏
+    var unrealized = getHoldingMarketValue(h) - getHoldingCost(h);
+    var realized = h.realizedPnL || 0;
+    return sum + unrealized + realized;
+  }, 0);
+  return total + (window.PF.closedPnL || 0);
 }
 
 /**
@@ -105,9 +114,42 @@ function getTotalPnLPercent() {
 }
 
 /**
- * 今日预估盈亏（昨日收盘价 → 今日估算净值 的差值）
+ * 计算基金交易的确认日期（仿支付宝规则）
+ * - 交易日（周一至周五）9:30-15:00 买入 → 当天确认
+ * - 交易日 15:00 之后 或 非交易日 → 顺延到下一个交易日
+ */
+function getEffectiveTradeDate() {
+  var now = new Date();
+  var day = now.getDay(); // 0=Sun, 6=Sat
+  var hour = now.getHours();
+  var minute = now.getMinutes();
+  var isWeekday = day >= 1 && day <= 5;
+  // 9:30 开盘，15:00 收盘
+  var inTradingHours = (hour > 9 || (hour === 9 && minute >= 30)) && hour < 15;
+
+  // 工作日交易时段内 → 今天确认
+  if (isWeekday && inTradingHours) {
+    return now.toISOString().split('T')[0];
+  }
+
+  // 否则跳到下一个交易日
+  var next = new Date(now);
+  if (!isWeekday || hour >= 15) {
+    next.setDate(next.getDate() + 1);
+  }
+  while (next.getDay() === 0 || next.getDay() === 6) {
+    next.setDate(next.getDate() + 1);
+  }
+  return next.toISOString().split('T')[0];
+}
+
+/**
+ * 今日预估盈亏
  */
 function getDailyPnL() {
+  // 获取今天的日期字符串 (YYYY-MM-DD)
+  const today = new Date().toISOString().split('T')[0];
+  
   return window.PF.holdings.reduce((sum, h) => {
     const cache = window.API ? window.API.NAV_CACHE : {};
     const fd = cache[h.code];
@@ -115,31 +157,44 @@ function getDailyPnL() {
     const gsz = parseFloat(fd.gsz);    // 今日估算净值
     const dwjz = parseFloat(fd.dwjz);  // 昨日确认收盘净值
     if (!gsz || !dwjz) return sum;
-    // 直接算：份额 × (今日净值 - 昨日净值)
-    return sum + h.shares * (gsz - dwjz);
+    
+    // 核心逻辑：
+    if (h.addedAt >= today) {
+      // 确认日当天及之前：还未确认 / 刚确认，没有盈亏
+      return sum;
+    } else {
+      // 确认日之后：当日盈亏 = 份额 × (今日估算净值 - 昨日收盘净值)
+      return sum + h.shares * (gsz - dwjz);
+    }
   }, 0);
 }
 
 /**
- * 用 API 的 dwjz 修正旧持仓的 costNav（之前可能错用 gsz 买入）
- * 在每次刷新数据后调用，幂等安全
+ * 一次性修正：如果旧持仓的 costNav 更接近 gsz（估算净值）而非 dwjz（收盘净值），
+ * 说明买入时错误用了估算值，修正为 dwjz。只执行一次，之后 costNav 永不再动。
  */
+var COST_FIXED_KEY = '_costNavFix_v1';
 function normalizeHoldingsCostNav() {
+  if (localStorage.getItem(COST_FIXED_KEY)) return;
+
   var cache = window.API ? window.API.NAV_CACHE : {};
   var changed = false;
   window.PF.holdings.forEach(function(h) {
     var fd = cache[h.code];
     if (!fd) return;
     var dwjz = parseFloat(fd.dwjz);
-    if (!dwjz) return;
-    // 如果 costNav 跟 dwjz 差超过 0.1%，说明可能是旧数据，修正为 dwjz
-    var diff = Math.abs(h.costNav - dwjz) / dwjz;
-    if (diff > 0.001) {
+    var gsz = parseFloat(fd.gsz);
+    if (!dwjz || !gsz) return;
+    // 仅当 costNav 明显更接近 gsz 而远离 dwjz 时才修正（说明当初错用了估算值买入）
+    var diffToDwjz = Math.abs(h.costNav - dwjz) / dwjz;
+    var diffToGsz = Math.abs(h.costNav - gsz) / gsz;
+    if (diffToGsz < 0.001 && diffToDwjz > 0.002) {
       h.costNav = dwjz;
       changed = true;
     }
   });
   if (changed) savePortfolio();
+  localStorage.setItem(COST_FIXED_KEY, '1');
 }
 
 /**
@@ -195,7 +250,7 @@ function buyFund(code, name, shares, nav) {
       code: code,
       shares: shares,
       costNav: nav,
-      addedAt: new Date().toISOString().split('T')[0]
+      addedAt: getEffectiveTradeDate()  // 交易日 9:30-15:00 买的才算今天，否则顺延
     });
   }
 
@@ -220,10 +275,16 @@ function sellFund(code, name, shares, nav) {
   if (!existing || existing.shares < shares) return { success: false, error: '持仓份额不足' };
 
   const amount = shares * nav;
+  // 已实现盈亏 = 卖出金额 - 卖出份额的成本 → 记在该持仓上
+  var realized = shares * (nav - existing.costNav);
+  existing.realizedPnL = (existing.realizedPnL || 0) + realized;
+
   existing.shares -= shares;
   window.PF.cash += amount;
 
   if (existing.shares <= 0) {
+    // 全部赎回：该基金的总盈亏转入 closedPnL，持仓删除
+    window.PF.closedPnL = (window.PF.closedPnL || 0) + (existing.realizedPnL || 0);
     window.PF.holdings = window.PF.holdings.filter(h => h.code !== code);
   }
 
@@ -270,3 +331,34 @@ function clearTransactions() {
 // ===========================
 
 window.PF = loadPortfolio();
+
+// 一次性修复：从交易记录恢复被 normalizeHoldingsCostNav 损坏的 costNav
+(function() {
+  var FIX_KEY = '_costFix_v3';
+  if (localStorage.getItem(FIX_KEY)) return;
+
+  var changed = false;
+  window.PF.holdings.forEach(function(h) {
+    // 汇总该基金所有买入交易
+    var invested = 0, bought = 0;
+    window.PF.transactions.forEach(function(t) {
+      if (t.code === h.code && t.type === 'buy') {
+        invested += t.amount;
+        bought += t.shares;
+      }
+    });
+    if (bought > 0) {
+      var realCostNav = invested / bought;
+      if (Math.abs(h.costNav - realCostNav) > 0.0001) {
+        console.log('[数据修复]', h.code,
+          '损坏的costNav:', h.costNav.toFixed(4),
+          '→ 恢复为:', realCostNav.toFixed(4));
+        h.costNav = realCostNav;
+        changed = true;
+      }
+    }
+  });
+
+  if (changed) savePortfolio();
+  localStorage.setItem(FIX_KEY, '1');
+})();

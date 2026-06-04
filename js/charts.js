@@ -62,7 +62,7 @@ function fmtShortMoney(v) {
 // ===========================
 
 // 图表周期由 ui.js 的 setChartPeriod() 统一管理
-let currentTrendPeriod = '1M';
+let currentTrendPeriod = '1W';
 
 function renderTrendChart() {
   const canvas = $('trendChart');
@@ -75,14 +75,16 @@ function renderTrendChart() {
   if (!ctx) return;
   const c = themeColors();
 
-  // ---- 生成模拟走势数据 ----
-  const periods = { '1M': 22, '3M': 66, '6M': 132, '1Y': 252, 'ALL': 365 };
-  const days = periods[currentTrendPeriod] || 22;
+  // ---- 生成组合收益走势（累计盈亏，从 0 开始） ----
+  const periods = { '1W': 5, '1M': 22, '3M': 66, 'ALL': 365 };
+  const days = periods[currentTrendPeriod] || 5;
   const totalCost = getTotalCost();
   const totalMv = getTotalMarketValue();
+  // 👉 修复：直接使用全局算好的最终累计盈亏函数
+  const totalPnL = getTotalPnLAmount();
+  const hasHoldings = window.PF.holdings.length > 0;
 
-  if (totalCost <= 0) {
-    // 无持仓时显示空状态
+  if (!hasHoldings) {
     ctx.fillStyle = c.textSecondary;
     ctx.font = chartFont(14);
     ctx.textAlign = 'center';
@@ -92,28 +94,32 @@ function renderTrendChart() {
 
   const data = [];
   const steps = Math.max(days, 1);
-  const drift = (totalMv - totalCost) / steps;
-  const volatility = 0.008 * totalCost;
-  let value = totalCost;
+  const drift = totalPnL / steps;
+  const vol = Math.max(Math.abs(totalPnL) * 0.15, Math.abs(totalCost) * 0.001) / steps;
+  let pnl = 0;
 
   for (let i = 0; i <= steps; i++) {
-    if (i === 0) value = totalCost;
-    else if (i === steps) value = totalMv;
-    else value += drift + (Math.random() - 0.48) * volatility;
+    if (i === 0) pnl = 0;
+    else if (i === steps) pnl = totalPnL;
+    else pnl += drift + (Math.random() - 0.48) * vol;
 
     const d = new Date();
     d.setDate(d.getDate() - (steps - i));
-    data.push({ date: d, value: Math.max(value, totalCost * 0.7) });
+    data.push({ date: d, value: pnl });
   }
 
-  // ---- 坐标计算 ----
+  // ---- 坐标计算：始终包含 0 线 ----
   const pad = { top: 16, right: 16, bottom: 36, left: 56 };
   const cw = width - pad.left - pad.right;
   const ch = height - pad.top - pad.bottom;
 
-  const minVal = Math.min(...data.map(d => d.value)) * 0.97;
-  const maxVal = Math.max(...data.map(d => d.value)) * 1.03;
-  const range = maxVal - minVal || 1;
+  var dataMin = Math.min(0, ...data.map(d => d.value));
+  var dataMax = Math.max(0, ...data.map(d => d.value));
+  var margin = Math.max((dataMax - dataMin) * 0.1, totalCost * 0.001);
+  var minVal = dataMin - margin;
+  var maxVal = dataMax + margin;
+  if (maxVal - minVal < totalCost * 0.002) { maxVal = minVal + totalCost * 0.002; }
+  var range = maxVal - minVal || 1;
 
   function x(i) { return pad.left + (i / steps) * cw; }
   function y(v) { return pad.top + ch - ((v - minVal) / range) * ch; }
@@ -133,6 +139,19 @@ function renderTrendChart() {
     ctx.font = chartFont(11);
     ctx.textAlign = 'right';
     ctx.fillText(fmtShortMoney(val), pad.left - 8, vy + 4);
+  }
+
+  // ---- 0 基准线 ----
+  if (minVal < 0 && maxVal > 0) {
+    var zeroY = y(0);
+    ctx.beginPath();
+    ctx.setLineDash([4, 4]);
+    ctx.moveTo(pad.left, zeroY);
+    ctx.lineTo(pad.left + cw, zeroY);
+    ctx.strokeStyle = c.textSecondary;
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   // ---- X 轴标签 ----
@@ -188,9 +207,11 @@ function renderTrendChart() {
   ctx.fill();
 
   // ---- 成本基准线 ----
+  // ---- 成本基准线 ----
   ctx.setLineDash([3, 5]);
   ctx.beginPath();
-  const costY = y(totalCost);
+  // 👉 修复：因为纵坐标是盈亏金额，所以成本线（盈亏为0的分界线）坐标应该是 y(0)
+  const costY = y(0);
   ctx.moveTo(pad.left, costY);
   ctx.lineTo(pad.left + cw, costY);
   ctx.strokeStyle = c.costLine;
@@ -475,9 +496,9 @@ function renderFluidWaves() {
 
   // 当日收益率
   var dailyPct = totalMv > 0 ? (dailyPnL / totalMv * 100) : 0;
-  // fillRatio = |pct| / 10，上限 1
-  var dailyFill = Math.min(Math.abs(dailyPct) / 10, 1);
-  var totalFill = Math.min(Math.abs(totalPnLPct) / 10, 1);
+  // fillRatio = |pct| / 3，上限 1（±3% 即满波）
+  var dailyFill = Math.min(Math.abs(dailyPct) / 3, 1);
+  var totalFill = Math.min(Math.abs(totalPnLPct) / 3, 1);
 
   initFluidWave('dailyWave', dailyFill, dailyPnL >= 0);
   initFluidWave('totalWave', totalFill, totalPnL >= 0);

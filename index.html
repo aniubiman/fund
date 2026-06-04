@@ -62,6 +62,9 @@
   <div class="mesh-blob mesh-blob-3"></div>
 </div>
 
+<!-- 流体着色器背景（珍珠光泽 + 鼠标水波，直接放 body 下避免被 main 的 display:none 影响） -->
+<div id="fluid-bg-container"></div>
+
 <!-- ====== 登录/注册页面 ====== -->
 <div id="login-page" class="login-page">
   <!-- Three.js 着色器动态背景 -->
@@ -207,21 +210,60 @@
   </nav>
 
   <div class="sidebar-footer">
-    <div class="theme-picker-label">外观</div>
-    <div class="theme-picker">
-      <button class="theme-btn active" data-theme-name="light" onclick="Theme.switchTo('light'); updateThemePickerUI()">
-        <span class="theme-dot light-dot"></span> 亮色
-      </button>
-      <button class="theme-btn" data-theme-name="dark" onclick="Theme.switchTo('dark'); updateThemePickerUI()">
-        <span class="theme-dot dark-dot"></span> 暗色
-      </button>
-      <button class="theme-btn" data-theme-name="warm" onclick="Theme.switchTo('warm'); updateThemePickerUI()">
-        <span class="theme-dot warm-dot"></span> 暖色
-      </button>
-      <button class="theme-btn" data-theme-name="auto" onclick="Theme.switchTo('auto'); updateThemePickerUI()">
-        <span class="theme-dot auto-dot"></span> 自动
+    <!-- 外观：亮/暗滑动开关（双圈对滑设计） -->
+    <div class="sidebar-row">
+      <span class="sidebar-label">外观</span>
+      <div class="theme-switch" id="theme-toggle" onclick="toggleTheme()" role="switch" tabindex="0">
+        <div class="ts-track">
+          <div class="ts-circle ts-left">
+            <svg class="ts-icon ts-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+            <svg class="ts-icon ts-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          </div>
+          <div class="ts-circle ts-right">
+            <svg class="ts-icon ts-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+            <svg class="ts-icon ts-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 流光背景：开/关滑动开关 -->
+    <div class="sidebar-row" style="margin-top:14px;">
+      <span class="sidebar-label">流光背景</span>
+      <div class="theme-switch fluid-switch" id="fluid-enable-toggle" onclick="toggleFluidEnable()" role="switch" tabindex="0">
+        <div class="ts-track">
+          <span class="fs-label fs-on">ON</span>
+          <span class="fs-label fs-off">OFF</span>
+          <div class="ts-circle ts-left"></div>
+          <div class="ts-circle ts-right"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 风格：两个切换按钮 -->
+    <div class="sidebar-row" style="margin-top:10px;">
+      <span class="sidebar-label">风格</span>
+      <div class="segmented-control" id="fluid-style-ctrl">
+        <button class="segment-btn active" onclick="FluidBG.setStyle('fluid');updateFluidUI()">流动水银</button>
+        <button class="segment-btn" onclick="FluidBG.setStyle('velvet');updateFluidUI()">丝绒波动</button>
+      </div>
+    </div>
+
+    <!-- 色调：两个颜色小球 -->
+    <div class="sidebar-row" id="fluid-palette-row" style="margin-top:10px;">
+      <span class="sidebar-label">色调</span>
+      <div class="segmented-control" id="fluid-palette-ctrl">
+        <button class="segment-btn active" onclick="FluidBG.setPaletteIdx(0);updateFluidUI()">色调1</button>
+        <button class="segment-btn" onclick="FluidBG.setPaletteIdx(1);updateFluidUI()">色调2</button>
+      </div>
+    </div>
+
+    <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid rgba(163, 177, 198, 0.2);">
+      <button class="btn btn-outline" style="width: 100%; color: var(--loss); border-color: var(--loss); justify-content: center; opacity: 0.8;" onclick="clearAllData()">
+        <span data-icon="trash" class="icon-sm"></span> 恢复初始数据
       </button>
     </div>
+
   </div>
 </aside>
 
@@ -297,10 +339,9 @@
             <div class="chart-subtitle">基于历史净值模拟回测</div>
           </div>
           <div class="chart-period">
-            <button class="period-btn active" data-period="1M" onclick="setChartPeriod('1M', this)">1月</button>
+            <button class="period-btn active" data-period="1W" onclick="setChartPeriod('1W', this)">1周</button>
+            <button class="period-btn" data-period="1M" onclick="setChartPeriod('1M', this)">1月</button>
             <button class="period-btn" data-period="3M" onclick="setChartPeriod('3M', this)">3月</button>
-            <button class="period-btn" data-period="6M" onclick="setChartPeriod('6M', this)">6月</button>
-            <button class="period-btn" data-period="1Y" onclick="setChartPeriod('1Y', this)">1年</button>
             <button class="period-btn" data-period="ALL" onclick="setChartPeriod('ALL', this)">全部</button>
           </div>
         </div>
@@ -678,18 +719,68 @@
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>
 <script src="js/shader-bg.js"></script>
+<script src="js/fluid-bg.js"></script>
 
 <!-- 注入 data-icon SVG 图标 + 启动着色器 -->
 <script>
 injectIcons();
 // 初始化登录页面着色器背景
-if (window.ShaderBG) {
-  window.ShaderBG.init(document.getElementById('shader-background'));
+var shaderContainer = document.getElementById('shader-background');
+if (window.ShaderBG && shaderContainer) {
+  window.ShaderBG.init(shaderContainer);
 }
 // 为登录卡片启用 3D 倾斜
 setTimeout(function() {
   if (typeof initTiltEffect === 'function') initTiltEffect();
 }, 300);
+
+// ---- 外观滑动开关 ----
+function toggleTheme() {
+  var isDark = document.body.getAttribute('data-theme') === 'dark';
+  if (typeof Theme !== 'undefined' && Theme.switchTo) {
+    Theme.switchTo(isDark ? 'light' : 'dark');
+  }
+  updateThemeUI();
+  if (window.FluidBG && FluidBG.onThemeChange) FluidBG.onThemeChange();
+}
+function updateThemeUI() {
+  var isDark = document.body.getAttribute('data-theme') === 'dark';
+  var toggle = document.getElementById('theme-toggle');
+  var ftoggle = document.getElementById('fluid-enable-toggle');
+  if (toggle) {
+    if (isDark) toggle.classList.remove('light');
+    else toggle.classList.add('light');
+  }
+  if (ftoggle) {
+    if (isDark) ftoggle.classList.remove('light');
+    else ftoggle.classList.add('light');
+  }
+}
+
+// ---- 流光背景开关 ----
+function toggleFluidEnable() {
+  var toggle = document.getElementById('fluid-enable-toggle');
+  var isOn = toggle && toggle.classList.contains('on');
+  if (window.FluidBG) FluidBG.setEnabled(!isOn);
+  if (toggle) {
+    if (!isOn) toggle.classList.add('on');
+    else toggle.classList.remove('on');
+  }
+}
+
+// 初始化开关状态
+setTimeout(function(){
+  updateThemeUI();
+  var fToggle = document.getElementById('fluid-enable-toggle');
+  if (fToggle) {
+    try {
+      var raw = localStorage.getItem('fluid-bg-settings');
+      var s = raw ? JSON.parse(raw) : {};
+      if (s.enabled === false) fToggle.classList.remove('on');
+      else fToggle.classList.add('on');
+    } catch(e) {}
+  }
+}, 100);
 </script>
 </body>
 </html>

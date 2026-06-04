@@ -229,6 +229,23 @@ body {
   pointer-events: none;
 }
 
+/* 流体着色器背景 — 在主内容下方、body 上方 */
+#fluid-bg-container {
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  z-index: 1;
+  pointer-events: none;
+}
+#fluid-bg-container canvas {
+  display: block;
+}
+
+/* 主内容区浮在流体背景之上 */
+.main {
+  position: relative;
+  z-index: 2;
+}
+
 .mesh-blob {
   position: absolute;
   filter: blur(80px);
@@ -322,42 +339,48 @@ body {
 }
 
 /* ====== Odometer 滚动数字 ====== */
+/* ====== Odometer 滚动数字 ====== */
 .odometer {
-  display: inline-block;          /* inline-block 的 overflow 裁剪比 inline-flex 更一致 */
-  overflow: hidden;
-  height: 1em;
+  display: inline-flex;
+  /* 核心修复 1：底部对齐，解决小数点后数字变小导致的悬空问题 */
+  align-items: flex-end; 
   line-height: 1;
-  white-space: nowrap;            /* 防止数字列换行 */
-  vertical-align: baseline;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
-  font-weight: inherit;
-  font-size: inherit;
-  letter-spacing: inherit;
 }
 
+/* 核心修复 2：将裁剪窗口下放到每一个具体的数字上 */
 .odometer-digit {
-  display: inline-flex;
-  flex-direction: column;
-  vertical-align: top;            /* 顶部对齐，确保 translateY(0) 显示第 0 位 */
-  will-change: transform;
-  transition: transform 0.8s cubic-bezier(0.2, 1, 0.2, 1);
+  display: inline-block;
+  height: 1em;         /* 强制视口高度等于字高，彻底杜绝露馅 */
+  overflow: hidden;
 }
 
-.odometer-digit span {
+/* 小数位：缩小字号 + 颜色淡化 */
+.odometer-digit.odometer-dec,
+.odometer-static.odometer-dec {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  margin-bottom: 0.04em; /* 视觉微调，补偿不同字体的下沉误差，让小数完美贴底 */
+}
+
+/* 取消 flex，改用 block 防止高度计算误差 */
+.odometer-inner {
   display: block;
-  height: 1em;
+  will-change: transform;
+}
+
+.odometer-inner span {
+  display: block;
+  height: 1em;         /* 严格限定每个数字占据 1em */
   line-height: 1;
   text-align: center;
-  font-weight: inherit;
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum";
 }
 
 .odometer-static {
   display: inline-block;
-  vertical-align: top;
-  line-height: 1;
+  vertical-align: bottom;
 }
 
 /* ====== Liquid Glass Pro — 多层玻璃 + SVG 畸变滤镜 ====== */
@@ -922,6 +945,192 @@ h3 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
 .theme-dot.auto-dot {
   background: conic-gradient(#f2f2f7 0deg 180deg, #000000 180deg 360deg);
   border-color: #aeaeb2;
+}
+.theme-dot.fluid-on-dot  { background: #0A84FF; border-color: #0A84FF; }
+.theme-dot.fluid-off-dot { background: #8E8E93; border-color: #8E8E93; }
+
+/* ====== 侧边栏新控件：滑动开关 + 分段按钮 ====== */
+.sidebar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+.sidebar-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* -- 滑动开关（外观、流光背景） -- */
+.toggle-pill {
+  position: relative;
+  width: 42px; height: 26px;
+  border-radius: 13px;
+  cursor: pointer;
+  transition: background 0.35s cubic-bezier(0.4,0,0.2,1), border-color 0.35s ease;
+  background: var(--border);
+  border: 1.5px solid var(--border);
+  outline: none;
+}
+.toggle-pill:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+.toggle-pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.toggle-thumb {
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
+  display: flex; align-items: center; justify-content: center;
+}
+.toggle-pill.active .toggle-thumb {
+  transform: translateX(16px);
+}
+/* ====== React 同款双圈对滑主题开关 ====== */
+.theme-switch {
+  width: 64px; height: 32px;
+  padding: 3px;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.35s cubic-bezier(0.4,0,0.2,1);
+  background: #18181b;
+  border: 1px solid #27272a;
+  outline: none;
+}
+.theme-switch:focus-visible { box-shadow: 0 0 0 3px rgba(10,132,255,0.2); }
+.theme-switch.light {
+  background: #fff;
+  border-color: #e4e4e7;
+}
+
+/* 流体开关：亮色主题下也用浅色底 */
+.fluid-switch {
+  background: #18181b;
+  border-color: #27272a;
+}
+.fluid-switch.light {
+  background: #fff;
+  border-color: #e4e4e7;
+}
+.fluid-switch .ts-left,
+.fluid-switch .ts-right { transform: translateX(0) !important; }
+.fluid-switch .ts-left  { background: #27272a; }
+.fluid-switch .ts-right { background: transparent; }
+.fluid-switch.light .ts-left { background: #e5e5e7; }
+.fluid-switch.on .ts-left {
+  background: var(--accent) !important;
+  transform: translateX(32px) !important;
+}
+.fluid-switch.on .ts-right { transform: translateX(-32px) !important; }
+
+/* 流体开关 ON/OFF 标签 */
+.fs-label {
+  position: absolute;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  z-index: 1;
+}
+.fs-on  { left: 10px;  color: #fff; opacity: 0; }
+.fs-off { right: 8px;  color: #71717a; opacity: 1; }
+.fluid-switch.on .fs-on  { opacity: 1; }
+.fluid-switch.on .fs-off { opacity: 0; }
+.fluid-switch.light .fs-on  { color: #18181b; }
+.fluid-switch.light .fs-off { color: #a1a1aa; }
+
+.ts-track {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.ts-circle {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.35s cubic-bezier(0.4,0,0.2,1);
+}
+.ts-left {
+  background: #27272a;
+  transform: translateX(0);
+}
+.theme-switch.light .ts-left {
+  background: #e5e5e7;
+  transform: translateX(32px);
+}
+.ts-right {
+  background: transparent;
+  transform: translateX(0);
+}
+.theme-switch.light .ts-right {
+  transform: translateX(-32px);
+}
+
+.ts-icon {
+  width: 16px; height: 16px;
+  position: absolute;
+  transition: opacity 0.25s ease;
+}
+
+/* 默认（暗色）：左圈 = 月亮，右圈 = 太阳 */
+.ts-left  .ts-moon { opacity: 1; }
+.ts-left  .ts-sun  { opacity: 0; }
+.ts-right .ts-moon { opacity: 0; }
+.ts-right .ts-sun  { opacity: 1; color: #71717a; }
+
+/* 亮色：左圈 = 太阳，右圈 = 月亮 */
+.theme-switch.light .ts-left  .ts-moon { opacity: 0; }
+.theme-switch.light .ts-left  .ts-sun  { opacity: 1; color: #3f3f46; }
+.theme-switch.light .ts-right .ts-moon { opacity: 1; color: #18181b; }
+.theme-switch.light .ts-right .ts-sun  { opacity: 0; }
+
+
+/* -- 分段按钮（风格、色调） -- */
+.segmented-control {
+  display: flex;
+  background: var(--border-light);
+  border-radius: 9px;
+  padding: 3px;
+  gap: 1px;
+}
+.segment-btn {
+  padding: 6px 11px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+  white-space: nowrap;
+  min-height: 30px;
+}
+.segment-btn.active {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: var(--shadow-xs);
+}
+.segment-btn:hover:not(.active) {
+  color: var(--text-secondary);
 }
 
 /* ----- Main Content ----- */

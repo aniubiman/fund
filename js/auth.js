@@ -259,6 +259,14 @@ function enterApp() {
   if (window.ShaderBG) {
     window.ShaderBG.destroy();
   }
+  
+  // 👉 新增代码：延迟 150ms 等待页面展开后，重新渲染所有图表和数据
+  setTimeout(function() {
+    if (typeof renderAll === 'function') {
+      renderAll();
+    }
+  }, 150);
+  
   // 同步用户名到 Supabase
   setTimeout(function() { window.Auth.syncUsernameToSupabase(); }, 1000);
 }

@@ -94,65 +94,82 @@ function animateCountUp(el, target, formatter, duration) {
 //  Odometer 滚动数字效果
 // ===========================
 
+// ===========================
+//  Odometer 滚动数字效果
+// ===========================
+
 var _odometerCache = {};
 
 function initOdometer(el, strVal) {
   if (!el) return;
-  var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (prefersReduced) {
-    el.innerText = strVal;
-    el.classList.remove('odometer');
-    return;
-  }
 
-  // 修复：如果被骨架屏清空了 DOM（没有子元素），即使数值没变也必须强制重建
   var elId = el.id || el.className;
+  // 防止被骨架屏清空后无法重建
   if (_odometerCache[elId] === strVal && el.classList.contains('odometer') && el.children.length > 0) {
     return;
   }
   _odometerCache[elId] = strVal;
 
-  // 清理旧内容
   el.innerHTML = '';
   el.classList.add('odometer');
 
   var chars = strVal.split('');
+  var pastDecimal = false;
 
   chars.forEach(function(char, i) {
-    if (char === ',') {
+    if (char === '.') {
+      pastDecimal = true;
+      var dot = document.createElement('span');
+      dot.className = 'odometer-static';
+      dot.innerText = '.';
+      el.appendChild(dot);
+    } else if (char === ',' || char === '¥' || char === '+' || char === '-' || char === '%') {
       var s = document.createElement('span');
       s.className = 'odometer-static';
-      s.innerText = ',';
+      if (pastDecimal && char === '%') s.classList.add('odometer-dec');
+      s.innerText = char;
       el.appendChild(s);
     } else if (!isNaN(parseInt(char))) {
-      var col = document.createElement('span');
-      col.className = 'odometer-digit';
+      
+      // 创建独立的裁剪窗口
+      var windowSpan = document.createElement('span');
+      windowSpan.className = 'odometer-digit';
+      if (pastDecimal) {
+        windowSpan.classList.add('odometer-dec');
+      }
 
-      // 预先填充 0-9
+      // 创建内部滚动的带子
+      var col = document.createElement('span');
+      col.className = 'odometer-inner';
+
+      // 填充 0-9
       for (var j = 0; j <= 9; j++) {
         var numSpan = document.createElement('span');
         numSpan.innerText = j;
         col.appendChild(numSpan);
       }
 
-      // 初始归零（transition 由 CSS .odometer-digit 提供，这里不碰它）
+      // 起点强制归零
+      col.style.transition = 'none';
       col.style.transform = 'translateY(0)';
-      el.appendChild(col);
+      
+      // 组装节点
+      windowSpan.appendChild(col);
+      el.appendChild(windowSpan);
 
       var targetDigit = parseInt(char);
-
-      // CSS transition 规则一直生效，延迟后只改 transform 即可触发滚动
-      // 用 em 而非 %：每个数字高 1em，避免各浏览器对 inline-flex 百分比计算的差异
-      // 每个数字的 transition-duration 略不同，营造齿轮依次转动的机械感
-      col.style.transitionDuration = (0.8 + i * 0.1) + 's';
-
-      setTimeout(function() {
-        col.style.transform = 'translateY(-' + targetDigit + 'em)';
-      }, 50);
-
+      
+      // 核心修复 3：使用 em 单位替代 %, 彻底解决由于设备 DPI 缩放造成的像素计算偏差
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          col.style.transition = 'transform ' + (1.5 + i * 0.1) + 's cubic-bezier(0.2, 1, 0.2, 1)';
+          col.style.transform = 'translateY(-' + targetDigit + 'em)';
+        });
+      });
     } else {
       var st = document.createElement('span');
       st.className = 'odometer-static';
+      if (pastDecimal) st.classList.add('odometer-dec');
       st.innerText = char;
       el.appendChild(st);
     }
@@ -184,7 +201,9 @@ function renderStats() {
   const dCard = gel('dailyCard');
 
   const tv = getTotalMarketValue();
-  const dailyPct = tv > 0 ? (dailyPnL / tv * 100) : 0;
+  // 核心修复：计算"昨日基准市值"，今日涨幅 = 今日盈亏 / 昨日市值
+  const baseMv = tv - dailyPnL; 
+  const dailyPct = baseMv > 0 ? (dailyPnL / baseMv * 100) : 0;
   dPctEl.textContent = fmtPct(dailyPct);
   dPctEl.className = 'stat-change ' + (dailyPnL >= 0 ? 'up' : 'down');
   dCard.classList.remove('profit', 'loss');
@@ -248,8 +267,12 @@ function buildHoldingRow(h) {
   const nav = fd ? (parseFloat(fd.gsz) || parseFloat(fd.dwjz)) : h.costNav;
   const mv = getHoldingMarketValue(h);
   const cost = getHoldingCost(h);
-  const pnl = mv - cost;
-  const pnlPct = cost > 0 ? (pnl / cost * 100) : 0;
+  var today = new Date().toISOString().split('T')[0];
+  // 确认日当天及之前不显示盈亏（T+1 确认，确认日净值=成本，无波动）
+  var beforeSettlement = h.addedAt >= today;
+  var fundRealized = h.realizedPnL || 0;
+  var pnl = beforeSettlement ? 0 : (mv - cost + fundRealized);
+  var pnlPct = beforeSettlement ? 0 : (cost > 0 ? (pnl / cost * 100) : 0);
   const dailyChange = fd ? (parseFloat(fd.gszzl) || 0) : 0;
 
   const pnlClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
@@ -474,7 +497,7 @@ async function onSelectFund(code, name) {
   // 获取实时净值
   try {
     const data = await window.API.fetchFundNAV(code);
-    selectedFundNAV = parseFloat(data.dwjz) || parseFloat(data.gsz);
+    selectedFundNAV = parseFloat(data.gsz) || parseFloat(data.dwjz);
     gel('tradeFundName').textContent = data.name || name;
     gel('tradeFundCode').textContent = `${code} · 净值日期 ${data.jzrq || '--'} · 更新 ${data.gztime || '--'}`;
     gel('tradeFundNav').textContent = '¥' + selectedFundNAV.toFixed(4);
@@ -600,7 +623,7 @@ async function modalSelectFund(code, name) {
 
   try {
     const data = await window.API.fetchFundNAV(code);
-    modalFundNAV = parseFloat(data.dwjz) || parseFloat(data.gsz);
+    modalFundNAV = parseFloat(data.gsz) || parseFloat(data.dwjz);
     const change = parseFloat(data.gszzl) || 0;
     gel('modalFundNavInfo').textContent =
       `最新净值 ¥${modalFundNAV.toFixed(4)} · ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
@@ -792,8 +815,6 @@ async function refreshData() {
   gel('updateTime').textContent = results.length > 0
     ? `数据更新于 ${results[0].gztime || '--'}`
     : '刷新失败，请检查网络';
-  // 修正旧持仓 costNav（之前可能用 gsz 买入，现在统一用 dwjz）
-  if (typeof normalizeHoldingsCostNav === 'function') normalizeHoldingsCostNav();
   renderAll();
   hideSkeletons();
   if (results.length > 0) showToast(iconCheck('icon-sm') + ` 已更新 ${results.length} 只基金数据`, 'success');
@@ -1320,3 +1341,25 @@ document.addEventListener('DOMContentLoaded', () => {
   }, 500);
 });
 
+// ===========================
+//  数据重置功能 (恢复出厂设置)
+// ===========================
+
+function clearAllData() {
+  // 1. 弹出二次确认警告框，防止误触
+  if (!confirm('【危险操作】确定要清空所有缓存数据吗？\n\n这将删除你的所有持仓、历史记录，并将总资金恢复为初始的 500,000.00 元。此操作不可逆！')) {
+    return;
+  }
+  
+  // 2. 彻底清除 localStorage 中我们存储的数据 Key
+  localStorage.removeItem('fund_portfolio_v2'); // 主数据
+  localStorage.removeItem('_costNavFix_v1');    // 如果有历史修复标记，也一并清理
+  
+  // 3. 提示用户
+  showToast('数据已彻底清空，系统即将重启...', 'success');
+  
+  // 4. 延迟 800 毫秒后刷新整个网页，让 store.js 重新生成默认的 50 万空账户
+  setTimeout(function() {
+    window.location.reload();
+  }, 800);
+}
